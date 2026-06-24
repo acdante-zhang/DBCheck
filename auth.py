@@ -133,24 +133,58 @@ def register_auth_routes(app):
             )
             conn.commit()
 
-            if not user or not _verify_password(user['password_hash'], password):
+            # 旧用户系统验证
+            old_auth_ok = user and _verify_password(user['password_hash'], password)
+
+            # RBAC 系统 fallback
+            rbac_ok = False
+            rbac_user = None
+            if not old_auth_ok:
+                try:
+                    from user_management.services.auth_service import AuthService
+                    rbac_result = AuthService().login(username, password)
+                    if rbac_result:
+                        rbac_ok = True
+                        rbac_user = rbac_result['user']
+                except Exception:
+                    pass
+
+            if not old_auth_ok and not rbac_ok:
                 return jsonify({'ok': False, 'error': '用户名或密码错误'}), 401
 
-            session['user_id'] = user['id']
-            session['username'] = user['username']
-            session['display_name'] = user['display_name'] or user['username']
-            session['role'] = user['role']
-            session.permanent = True
-
-            return jsonify({
-                'ok': True,
-                'user': {
-                    'id': user['id'],
-                    'username': user['username'],
-                    'display_name': user['display_name'],
-                    'role': user['role'],
-                }
-            })
+            if old_auth_ok:
+                session['user_id'] = user['id']
+                session['username'] = user['username']
+                session['display_name'] = user['display_name'] or user['username']
+                session['role'] = user['role']
+                session['auth_source'] = 'legacy'
+                session.permanent = True
+                return jsonify({
+                    'ok': True,
+                    'user': {
+                        'id': user['id'],
+                        'username': user['username'],
+                        'display_name': user['display_name'],
+                        'role': user['role'],
+                    }
+                })
+            else:
+                # RBAC 用户登录
+                session['user_id'] = rbac_user['id']
+                session['username'] = rbac_user['username']
+                session['display_name'] = rbac_user.get('nickname') or rbac_user['username']
+                session['role'] = 'admin' if 'admin' in rbac_user.get('roles', []) else rbac_user.get('roles', ['user'])[0]
+                session['auth_source'] = 'rbac'
+                session.permanent = True
+                return jsonify({
+                    'ok': True,
+                    'user': {
+                        'id': rbac_user['id'],
+                        'username': rbac_user['username'],
+                        'display_name': rbac_user.get('nickname') or rbac_user['username'],
+                        'role': session['role'],
+                    }
+                })
         finally:
             conn.close()
 

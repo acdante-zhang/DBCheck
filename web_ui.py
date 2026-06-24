@@ -4322,11 +4322,21 @@ def api_pro_import_instances():
 
 @app.route('/api/pro/datasources', methods=['GET'])
 def api_pro_datasources():
-    """获取数据源列表"""
+    """获取数据源列表（支持 RBAC 数据权限过滤）"""
     try:
         from pro import get_instance_manager
         im = get_instance_manager()
         instances = im.get_all_instances(mask_password=True)
+        # RBAC 数据权限过滤：非 admin 用户只返回绑定的数据源
+        if session.get('auth_source') == 'rbac' and session.get('role') != 'admin':
+            try:
+                from user_management.services.perm_service import PermService
+                ps = PermService()
+                allowed_ids = ps.get_allowed_asset_ids(session['user_id'])
+                if allowed_ids:
+                    instances = [i for i in instances if str(i.get('id')) in [str(a) for a in allowed_ids]]
+            except Exception:
+                pass
         return jsonify({'ok': True, 'datasources': instances})
     except ImportError as e:
         import traceback

@@ -3798,6 +3798,7 @@ def init_default_templates(db_path: str = None, force: bool = False):
         ('kingbase',   'KingbaseES 默认巡检模板', 'KingbaseES Default Inspection Template',  KINGBASE_DEFAULT_CHAPTERS, 'v1', 1, 1),
         ('yashandb',  'YashanDB 默认巡检模板',    'YashanDB Default Inspection Template',    YASHANDB_DEFAULT_CHAPTERS,    'v1', 1, 1),
         ('gbase',     'GBase 8s 默认巡检模板',     'GBase 8s Default Inspection Template',     GBASE_DEFAULT_CHAPTERS,     'v1', 1, 1),
+        ('oracle_rac','Oracle RAC 集群巡检模板',    'Oracle RAC Cluster Inspection Template',   ORACLE_DEFAULT_CHAPTERS,    'v1', 1, 1),
     ]
 
     for db_type, template_name, template_name_en, chapters, version, is_default, is_preset in db_types:
