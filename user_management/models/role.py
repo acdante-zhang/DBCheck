@@ -84,3 +84,19 @@ class RoleModel:
             WHERE rmp.role_id = ?
             ORDER BY m.sort_order
         """, (role_id,))
+
+    def get_role_assets(self, role_id: int) -> list:
+        """获取角色绑定的资产ID列表"""
+        rows = self.db.query_all(
+            "SELECT asset_id FROM um_role_asset_bind WHERE role_id=?", (role_id,)
+        )
+        return [r['asset_id'] for r in rows]
+
+    def bind_role_assets(self, role_id: int, asset_ids: list):
+        """设置角色绑定的资产（先删后增）"""
+        self.db.execute("DELETE FROM um_role_asset_bind WHERE role_id=?", (role_id,))
+        if asset_ids:
+            self.db.execute_many(
+                "INSERT OR IGNORE INTO um_role_asset_bind(role_id, asset_id) VALUES(?,?)",
+                [(role_id, aid) for aid in asset_ids]
+            )

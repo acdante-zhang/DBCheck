@@ -66,12 +66,23 @@ class PermService:
         return self.db.query_all(sql, (user_id,))
 
     def get_allowed_asset_ids(self, user_id: int) -> list:
-        """获取用户可见的数据库资产 ID 列表"""
-        sql = """
-            SELECT asset_id FROM um_user_asset_bind WHERE user_id = ?
+        """获取用户可见的数据库资产 ID 列表（用户级 + 角色级）"""
+        # 用户级绑定
+        sql_user = "SELECT asset_id FROM um_user_asset_bind WHERE user_id = ?"
+        user_assets = [r['asset_id'] for r in self.db.query_all(sql_user, (user_id,))]
+        # 角色级绑定：用户所属角色的资产
+        sql_role = """
+            SELECT DISTINCT rab.asset_id FROM um_role_asset_bind rab
+            JOIN um_user_role ur ON rab.role_id = ur.role_id
+            WHERE ur.user_id = ?
         """
-        rows = self.db.query_all(sql, (user_id,))
-        return [r['asset_id'] for r in rows]
+        try:
+            role_assets = [r['asset_id'] for r in self.db.query_all(sql_role, (user_id,))]
+        except Exception:
+            role_assets = []
+        # 合并去重
+        all_assets = set(user_assets + role_assets)
+        return list(all_assets)
 
     def check_permission(self, user_id: int, menu_code: str,
                          min_level: int = 1) -> bool:

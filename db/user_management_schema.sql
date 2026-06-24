@@ -134,6 +134,17 @@ CREATE TABLE IF NOT EXISTS um_user_asset_bind (
 );
 
 -- ============================================
+-- 7b. 角色-数据库资产绑定表（角色级数据权限）
+-- ============================================
+CREATE TABLE IF NOT EXISTS um_role_asset_bind (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    role_id     INTEGER NOT NULL,
+    asset_id    TEXT    NOT NULL,  -- 数据源 instance_id
+    UNIQUE(role_id, asset_id),
+    FOREIGN KEY (role_id) REFERENCES um_role(id) ON DELETE CASCADE
+);
+
+-- ============================================
 -- 8. 用户-模块绑定表（覆盖角色默认配置）
 -- ============================================
 CREATE TABLE IF NOT EXISTS um_user_module_bind (

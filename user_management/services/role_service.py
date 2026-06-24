@@ -42,3 +42,11 @@ class RoleService:
 
     def get_menu_permissions(self, role_id: int) -> list:
         return self.role_model.get_menu_permissions(role_id)
+
+    def get_role_assets(self, role_id: int) -> list:
+        """获取角色绑定的资产列表"""
+        return self.role_model.get_role_assets(role_id)
+
+    def bind_role_assets(self, role_id: int, asset_ids: list):
+        """绑定角色的资产"""
+        self.role_model.bind_role_assets(role_id, asset_ids)

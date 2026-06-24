@@ -98,3 +98,21 @@ def set_role_menu_perm(rid):
     # menu_perms 格式: [{"menu_id": 1, "perm_id": 2}, ...]
     role_service.set_menu_permissions(rid, menu_perms)
     return jsonify({'code': 0, 'msg': '权限配置成功'})
+
+
+@role_bp.route('/<int:rid>/assets', methods=['GET'])
+@require_permission('system_manage', min_level=1)
+def get_role_assets(rid):
+    """获取角色绑定的资产列表"""
+    rows = role_service.get_role_assets(rid)
+    return jsonify({'code': 0, 'data': rows})
+
+
+@role_bp.route('/<int:rid>/assets', methods=['PUT'])
+@require_permission('system_manage', min_level=4)
+def bind_role_assets(rid):
+    """设置角色绑定的资产"""
+    data = request.get_json(silent=True) or {}
+    asset_ids = data.get('asset_ids', [])
+    role_service.bind_role_assets(rid, asset_ids)
+    return jsonify({'code': 0, 'msg': '资产绑定成功'})

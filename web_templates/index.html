@@ -15537,7 +15537,7 @@ async function deleteBackupHistory(recordId) {
   .mon-state-idle      { color:#94a3b8; }
 
   /* ═══ 健康监控卡片样式 ═══ */
-  .hm-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; transition:box-shadow 0.2s; }
+  .hm-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; transition:box-shadow 0.2s; position:relative; }
   .hm-card:hover { box-shadow:0 2px 12px rgba(0,0,0,0.08); }
   .hm-card-header { display:flex; align-items:center; gap:8px; padding:10px 14px; background:var(--surface2); border-bottom:1px solid var(--border); }
   .hm-card-icon { font-size:18px; }
@@ -17469,6 +17469,45 @@ function mkdirRemote() {
         <div style="font-size:36px;">📭</div><div>暂无监控数据，请检查数据源连接</div></div>`;
     }
     grid.innerHTML = html;
+    // 绑定 resize 拖拽事件
+    hmBindResize();
+  }
+
+  // ── 卡片 resize 拖拽 ──
+  var _hmResizeData = null;
+  function hmBindResize() {
+    document.querySelectorAll('.hm-card-resize-handle').forEach(function(handle) {
+      handle.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var card = handle.closest('.hm-card');
+        if (!card) return;
+        _hmResizeData = {
+          card: card,
+          startX: e.clientX,
+          startY: e.clientY,
+          startW: card.offsetWidth,
+          startH: card.offsetHeight,
+        };
+        document.addEventListener('mousemove', hmResizeMove);
+        document.addEventListener('mouseup', hmResizeEnd);
+      });
+    });
+  }
+  function hmResizeMove(e) {
+    if (!_hmResizeData) return;
+    var dx = e.clientX - _hmResizeData.startX;
+    var dy = e.clientY - _hmResizeData.startY;
+    var newW = Math.max(260, _hmResizeData.startW + dx);
+    var newH = Math.max(120, _hmResizeData.startH + dy);
+    _hmResizeData.card.style.width = newW + 'px';
+    _hmResizeData.card.style.gridColumn = 'span 1';
+    _hmResizeData.card.querySelector('.hm-card-body').style.maxHeight = (newH - 50) + 'px';
+  }
+  function hmResizeEnd() {
+    _hmResizeData = null;
+    document.removeEventListener('mousemove', hmResizeMove);
+    document.removeEventListener('mouseup', hmResizeEnd);
   }
 
   // ── 各卡片渲染 ──
@@ -17478,8 +17517,13 @@ function mkdirRemote() {
     if (cardClass === 'large') style = ' style="grid-column:span 2;"';
     else if (cardClass === 'small') style = ' style="grid-column:span 1;max-width:380px;"';
     return `<div class="hm-card ${cardClass||''}"${style}>
-      <div class="hm-card-header"><span class="hm-card-icon">${icon||'📋'}</span><span class="hm-card-title">${title}</span></div>
-      <div class="hm-card-body">${body}</div></div>`;
+      <div class="hm-card-header">
+        <span class="hm-card-icon">${icon||'📋'}</span>
+        <span class="hm-card-title">${title}</span>
+        <span class="hm-card-resize" title="拖拽调整大小" style="cursor:nwse-resize;font-size:10px;color:var(--text-muted);padding:0 4px;">⤢</span>
+      </div>
+      <div class="hm-card-body">${body}</div>
+      <div class="hm-card-resize-handle" style="position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,var(--border) 50%);"></div></div>`;
   }
 
   function hmMiniTable(rows, cols) {
@@ -18037,7 +18081,25 @@ function mkdirRemote() {
         tableHtml += '<tr>';
         columns.forEach(c => {
           const val = row[c] !== undefined ? row[c] : '-';
-          tableHtml += `<td style="padding:5px 8px;border-bottom:1px solid var(--border);">${val}</td>`;
+          // 颜色标识逻辑（复用 hmMiniTable 的规则）
+          var tdStyle = 'padding:5px 8px;border-bottom:1px solid var(--border);';
+          var key = c.toLowerCase();
+          var vstr = String(val).toLowerCase();
+          if (key === 'status' || key === 'state' || key === 'account_status' || key === 'database_status') {
+            var good = ['open','active','valid','ok','normal','read write','running'];
+            var bad = ['critical','error','failed','locked','expired','invalid','shutdown','blocked'];
+            var warn = ['warning','restricted','inactive','read only','suspended','recovering'];
+            if (good.some(function(x){return vstr===x;})) tdStyle += 'color:#52c41a;font-weight:bold;';
+            else if (bad.some(function(x){return vstr.indexOf(x)>-1;})) tdStyle += 'color:#f5222d;font-weight:bold;';
+            else if (warn.some(function(x){return vstr.indexOf(x)>-1;})) tdStyle += 'color:#faad14;font-weight:bold;';
+          }
+          if (key === 'usage_pct' || key === 'pct_used' || key.indexOf('usage')>-1 || key.indexOf('pct')>-1) {
+            var p = parseFloat(val) || 0;
+            if (p > 90) tdStyle += 'color:#f5222d;font-weight:bold;';
+            else if (p > 80) tdStyle += 'color:#faad14;font-weight:bold;';
+            else tdStyle += 'color:#52c41a;';
+          }
+          tableHtml += `<td style="${tdStyle}">${val}</td>`;
         });
         tableHtml += '</tr>';
       });
@@ -18275,6 +18337,7 @@ function mkdirRemote() {
           <td>${r.description||'-'}</td>
           <td>
             <button class="um-btn um-btn-sm um-btn-primary" onclick="umShowRolePerms(${r.id},'${r.role_name}')">权限配置</button>
+            <button class="um-btn um-btn-sm" onclick="umShowRoleAssets(${r.id},'${r.role_name}')" style="background:var(--accent);color:#fff;">关联资产</button>
             <button class="um-btn um-btn-sm um-btn-danger" onclick="umDeleteRole(${r.id},'${r.role_name}')">删除</button>
           </td>
         </tr>`).join('')}
@@ -18344,6 +18407,34 @@ function mkdirRemote() {
     if (res.code !== 0) { umShowToast(res.msg || '删除失败', 'error'); return; }
     umShowToast('角色已删除');
     umLoadRoles();
+  }
+
+  async function umShowRoleAssets(rid, roleName) {
+    try {
+      var ar = await umApi('/api/um/role/' + rid + '/assets');
+      var currentAssets = (ar.code === 0 && ar.data) ? ar.data : [];
+      var dr = await fetch('/api/pro/datasources');
+      var dd = await dr.json();
+      var allDs = dd.datasources || [];
+      var checks = allDs.map(function(ds) {
+        return '<label style="display:block;padding:4px 0;cursor:pointer;">' +
+          '<input type="checkbox" class="um-role-asset-check" value="' + ds.id + '" ' +
+          (currentAssets.indexOf(String(ds.id))>-1 ? 'checked' : '') + '> ' +
+          (ds.name || ds.host+':'+ds.port) + ' (' + (ds.db_type||'') + ')' +
+          '</label>';
+      }).join('');
+      umOpenModal('关联资产 - ' + roleName, `
+        <div style="max-height:50vh;overflow-y:auto;">
+          <p style="color:var(--text-muted);margin-bottom:8px;">选择该角色下用户可访问的数据源</p>
+          ${checks}
+        </div>`, async () => {
+          const selected = [...document.querySelectorAll('.um-role-asset-check:checked')].map(c => c.value);
+          const res = await umApi('/api/um/role/' + rid + '/assets', { method: 'PUT', body: JSON.stringify({ asset_ids: selected }) });
+          if (res.code !== 0) throw new Error(res.msg || '绑定失败');
+          umShowToast('资产已更新');
+          umLoadRoles();
+        });
+    } catch(e) { umShowToast('加载失败: ' + e.message, 'error'); }
   }
 
   // ── 菜单权限（只读） ──
