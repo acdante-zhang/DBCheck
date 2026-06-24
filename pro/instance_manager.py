@@ -447,9 +447,12 @@ class InstanceManager:
             elif db_type == 'oracle':
                 import oracledb
                 dsn = inst.service_name or '%s:%d/orcl' % (inst.host, inst.port)
-                mode = oracledb.SYSDBA if inst.sysdba else oracledb.DEFAULT_MODE
+                mode = oracledb.SYSDBA if inst.sysdba else None
                 try:
-                    conn = oracledb.connect(user=inst.user, password=password, dsn=dsn, mode=mode)
+                    if mode:
+                        conn = oracledb.connect(user=inst.user, password=password, dsn=dsn, mode=mode)
+                    else:
+                        conn = oracledb.connect(user=inst.user, password=password, dsn=dsn)
                 except Exception as e:
                     err_str = str(e)
                     if 'DPY-3010' in err_str:

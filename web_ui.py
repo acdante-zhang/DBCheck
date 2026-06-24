@@ -4451,16 +4451,23 @@ def api_dashboard_config_delete(config_id):
 
 @app.route('/api/dashboard/share/generate', methods=['POST'])
 def api_dashboard_share_generate():
-    """生成只读分享链接"""
+    """生成或复用只读分享链接（token 不变除非看板删除）"""
     try:
         data = request.get_json() or {}
         config_id = data.get('config_id', '')
         ip_whitelist = data.get('ip_whitelist', '')
         if not config_id:
             return jsonify({'ok': False, 'error': '缺少看板ID'}), 400
-        import uuid as _uuid
-        share_token = str(_uuid.uuid4()).replace('-', '')[:24]
         conn = _get_dashboard_db()
+        # 检查是否已有 token，有则复用
+        existing = conn.execute(
+            'SELECT share_token FROM dashboard_config WHERE id=?', (config_id,)
+        ).fetchone()
+        if existing and existing['share_token']:
+            share_token = existing['share_token']
+        else:
+            import uuid as _uuid
+            share_token = str(_uuid.uuid4()).replace('-', '')[:24]
         conn.execute(
             'UPDATE dashboard_config SET share_token=?, ip_whitelist=? WHERE id=?',
             (share_token, ip_whitelist, config_id)
@@ -4514,8 +4521,74 @@ def api_dashboard_share_view(token):
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
-@app.route('/dashboard/share/<token>', methods=['GET'])
-def dashboard_share_page(token):
+@app.route('/api/dashboard/share/<token>/data', methods=['GET'])
+def api_dashboard_share_data(token):
+    """只读分享页面获取实时数据（无需登录）"""
+    try:
+        conn = _get_dashboard_db()
+        row = conn.execute(
+            'SELECT * FROM dashboard_config WHERE share_token=?', (token,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'ok': False, 'error': '分享链接无效'}), 404
+
+        # IP 白名单校验
+        ip_whitelist = row['ip_whitelist'] if 'ip_whitelist' in row.keys() else ''
+        if ip_whitelist:
+            client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', '') or request.environ.get('REMOTE_ADDR', '')
+            client_ip = client_ip.split(',')[0].strip()
+            allowed_ips = [ip.strip() for ip in ip_whitelist.split(',') if ip.strip()]
+            if not any(allowed == client_ip or allowed == '*' for allowed in allowed_ips):
+                return jsonify({'ok': False, 'error': f'IP {client_ip} 不在白名单内'}), 403
+
+        cards = _json.loads(row['cards_json'])
+        # 复用 dashboard data 逻辑
+        from pro.instance_manager import get_instance_manager
+        im = get_instance_manager()
+        result_cards = []
+        for card in cards:
+            card_result = {'id': card.get('id', ''), 'title': card.get('title', '')}
+            try:
+                ds_id = card.get('datasource_id', '')
+                inst = im.get_instance_decrypted(str(ds_id))
+                if not inst:
+                    card_result['error'] = '数据源不存在'
+                    result_cards.append(card_result)
+                    continue
+                db_type = inst.get('db_type', '').lower().replace('oracle_full', 'oracle')
+                card_type = card.get('type', '')
+                monitor_item = card.get('monitor_item', '')
+                custom_sql = card.get('custom_sql', '')
+
+                if card_type == 'custom_sql' and custom_sql:
+                    sql = custom_sql
+                elif monitor_item:
+                    from health_monitor_queries import DB_HEALTH_SQL_MAP
+                    sql_map = DB_HEALTH_SQL_MAP.get(db_type, {})
+                    sql = sql_map.get(monitor_item, '')
+                    if not sql:
+                        card_result['error'] = f'不支持: {monitor_item}'
+                        result_cards.append(card_result)
+                        continue
+                else:
+                    card_result['error'] = '无SQL'
+                    result_cards.append(card_result)
+                    continue
+
+                # 执行查询
+                from monitor_engine import MonitorEngine
+                me = MonitorEngine()
+                rows = me._connect_and_query(str(ds_id), sql)
+                # 转换为中文键
+                from health_monitor_queries import CARD_DISPLAY_CONFIG
+                card_result['data'] = rows[:100]
+            except Exception as e:
+                card_result['error'] = str(e)
+            result_cards.append(card_result)
+        return jsonify({'ok': True, 'cards': result_cards, 'config_name': row['name']})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
     """只读看板页面"""
     try:
         conn = _get_dashboard_db()
@@ -4539,66 +4612,86 @@ def dashboard_share_page(token):
 
         cards_json = row['cards_json'] if 'cards_json' in row.keys() else '[]'
         config_name = row['name']
-        html = f'''<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>{config_name} - 只读看板</title>
+        share_html = """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>__TITLE__ - 只读看板</title>
 <style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ background:#0d1117; color:#e6edf3; font-family:sans-serif; padding:20px; }}
-.header {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }}
-.header h1 {{ font-size:18px; }}
-.badge {{ background:#1a7f37; color:#fff; padding:2px 10px; border-radius:12px; font-size:12px; }}
-.grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:14px; }}
-.card {{ background:#161b22; border:1px solid #30363d; border-radius:10px; overflow:hidden; }}
-.card-title {{ padding:10px 14px; background:#1c2330; font-weight:600; font-size:13px; border-bottom:1px solid #30363d; }}
-.card-body {{ padding:12px 14px; min-height:80px; }}
-table {{ width:100%; border-collapse:collapse; font-size:12px; }}
-th,td {{ padding:6px 8px; border-bottom:1px solid #21262d; text-align:left; }}
-th {{ color:#8b949e; font-weight:500; }}
-.stat {{ display:flex; justify-content:space-between; padding:4px 0; }}
-.stat b {{ color:#f0f6fc; }}
-.loading {{ text-align:center; color:#8b949e; padding:20px; }}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0d1117; color:#e6edf3; font-family:sans-serif; padding:20px; }
+.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.header h1 { font-size:18px; }
+.badge { background:#1a7f37; color:#fff; padding:2px 10px; border-radius:12px; font-size:12px; }
+.ctrl { display:flex; gap:8px; align-items:center; font-size:13px; }
+.ctrl select, .ctrl button { padding:4px 10px; border-radius:6px; border:1px solid #30363d; background:#161b22; color:#e6edf3; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:14px; }
+.card { background:#161b22; border:1px solid #30363d; border-radius:10px; overflow:hidden; }
+.card-title { padding:10px 14px; background:#1c2330; font-weight:600; font-size:13px; border-bottom:1px solid #30363d; }
+.card-body { padding:12px 14px; min-height:80px; max-height:400px; overflow-y:auto; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th,td { padding:6px 8px; border-bottom:1px solid #21262d; text-align:left; }
+th { color:#8b949e; font-weight:500; }
+.stat { display:flex; justify-content:space-between; padding:4px 0; }
+.stat b { color:#f0f6fc; }
+.loading { text-align:center; color:#8b949e; padding:20px; }
+.updated { font-size:11px; color:#8b949e; }
 </style></head><body>
-<div class="header"><h1>📊 {config_name}</h1><span class="badge">只读分享</span></div>
+<div class="header">
+  <h1>📊 __TITLE__</h1>
+  <div class="ctrl">
+    <span class="badge">只读分享</span>
+    <select id="refresh-interval" onchange="changeInterval()">
+      <option value="0">不自动刷新</option>
+      <option value="10">10秒</option>
+      <option value="30" selected>30秒</option>
+      <option value="60">60秒</option>
+    </select>
+    <button onclick="loadData()">🔄 刷新</button>
+    <span class="updated" id="updated-time"></span>
+  </div>
+</div>
 <div class="grid" id="cards-grid"><div class="loading">加载中...</div></div>
 <script>
-var TOKEN = '{token}';
-var CONFIG = {cards_json};
-async function loadData() {{
-  try {{
-    var r = await fetch('/api/dashboard/share/' + TOKEN);
+var TOKEN = '__TOKEN__';
+var _timer = null;
+function changeInterval() {
+  if (_timer) { clearInterval(_timer); _timer = null; }
+  var v = parseInt(document.getElementById('refresh-interval').value);
+  if (v > 0) _timer = setInterval(loadData, v * 1000);
+}
+async function loadData() {
+  try {
+    var r = await fetch('/api/dashboard/share/' + TOKEN + '/data');
     var d = await r.json();
-    if (!d.ok) {{ document.getElementById('cards-grid').innerHTML = '<div class="loading">' + (d.error||'加载失败') + '</div>'; return; }}
-    var cards = d.config.cards || [];
-    if (!cards.length) {{ document.getElementById('cards-grid').innerHTML = '<div class="loading">暂无卡片</div>'; return; }}
-    var dr = await fetch('/api/dashboard/data', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{cards:cards}})}});
-    var dd = await dr.json();
+    if (!d.ok) { document.getElementById('cards-grid').innerHTML = '<div class="loading">' + (d.error||'加载失败') + '</div>'; return; }
+    var cards = d.cards || [];
+    if (!cards.length) { document.getElementById('cards-grid').innerHTML = '<div class="loading">暂无卡片</div>'; return; }
     var html = '';
-    cards.forEach(function(c) {{
-      var dataCard = dd.ok ? (dd.cards||[]).find(function(x) {{return x.id===c.id;}}) : null;
+    cards.forEach(function(c) {
       var body = '<div class="loading">无数据</div>';
-      if (dataCard && dataCard.error) body = '<div style="color:#f85149;padding:10px;">⚠️ '+dataCard.error+'</div>';
-      else if (dataCard && dataCard.data) {{
-        if (Array.isArray(dataCard.data) && dataCard.data.length) {{
-          var cols = Object.keys(dataCard.data[0]);
-          body = '<table><tr>'+cols.map(function(k){{return '<th>'+k+'</th>';}}).join('')+'</tr>';
-          dataCard.data.slice(0,20).forEach(function(row) {{
-            body += '<tr>'+cols.map(function(k){{return '<td>'+row[k]+'</td>';}}).join('')+'</tr>';
-          }});
-          body += '</table>';
-        }} else if (dataCard.data && typeof dataCard.data === 'object') {{
-          body = '<div>'; for (var k in dataCard.data) {{ body += '<div class="stat"><span>'+k+'</span><b>'+dataCard.data[k]+'</b></div>'; }} body += '</div>';
-        }}
-      }}
+      if (c.error) body = '<div style="color:#f85149;padding:10px;">⚠️ ' + c.error + '</div>';
+      else if (c.data && Array.isArray(c.data) && c.data.length) {
+        var cols = Object.keys(c.data[0]);
+        body = '<table><tr>' + cols.map(function(k){return '<th>'+k+'</th>';}).join('') + '</tr>';
+        c.data.slice(0,30).forEach(function(row) {
+          body += '<tr>' + cols.map(function(k){return '<td>'+row[k]+'</td>';}).join('') + '</tr>';
+        });
+        body += '</table>';
+      } else if (c.data && typeof c.data === 'object') {
+        body = '<div>';
+        for (var k in c.data) { body += '<div class="stat"><span>'+k+'</span><b>'+c.data[k]+'</b></div>'; }
+        body += '</div>';
+      }
       html += '<div class="card"><div class="card-title">'+c.title+'</div><div class="card-body">'+body+'</div></div>';
-    }});
+    });
     document.getElementById('cards-grid').innerHTML = html;
-  }} catch(e) {{
+    document.getElementById('updated-time').textContent = '更新: ' + new Date().toLocaleTimeString();
+  } catch(e) {
     document.getElementById('cards-grid').innerHTML = '<div class="loading">加载失败: '+e.message+'</div>';
-  }}
-}}
-loadData(); setInterval(loadData, 30000);
-</script></body></html>'''
-        return html
+  }
+}
+loadData(); changeInterval();
+</script></body></html>"""
+        share_html = share_html.replace('__TITLE__', config_name).replace('__TOKEN__', token)
+        return share_html
     except Exception as e:
         return f'<h2>错误: {e}</h2>', 500
 

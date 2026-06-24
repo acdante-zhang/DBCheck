@@ -74,16 +74,38 @@ CREATE TABLE IF NOT EXISTS um_menu (
     status      TINYINT      DEFAULT 1
 );
 
--- 初始菜单种子数据（根据 DBCheck 实际功能）
+-- 初始菜单种子数据（与前端 nav-item id 对应，menu_code = nav-item id 去掉 nav- 前缀）
 INSERT OR IGNORE INTO um_menu(menu_code, menu_name, parent_id, sort_order) VALUES
-    ('dashboard',     '仪表盘',       0, 1),
-    ('db_check',      '数据库检查',    0, 2),
-    ('slow_query',    '慢查询分析',    0, 3),
-    ('ai_diagnosis',  'AI 诊断',      0, 4),
-    ('plugin_market', '插件市场',      0, 5),
-    ('asset_manage',  '资产管理',      0, 6),
-    ('system_manage', '系统管理',      0, 7),
-    ('health_monitor','健康监控',      0, 8);
+    ('home',              '首页',           0, 1),
+    ('wizard',            '数据库巡检',     0, 2),
+    ('server-inspect',    '服务器巡检',     0, 3),
+    ('scheduler',         '定时巡检',       0, 4),
+    ('awr',               'AWR报告分析',    0, 5),
+    ('reports',           '巡检历史',       0, 6),
+    ('server-history',    '服务器巡检历史', 0, 7),
+    ('trend',             '历史趋势分析',   0, 8),
+    ('datasources',       '数据源管理',     0, 9),
+    ('inspection-config', '巡检配置管理',   0, 10),
+    ('baseline-config',   '基线配置管理',   0, 11),
+    ('server-thresholds', '服务器阈值配置', 0, 12),
+    ('rules',             '规则引擎',       0, 13),
+    ('rag',               'RAG知识库',      0, 14),
+    ('plugin-market',     '插件市场',       0, 15),
+    ('sql-editor',        'SQL编辑器',      0, 16),
+    ('remote-shell',      '远程终端',       0, 17),
+    ('monitor-slow',      '实时慢查询',     0, 18),
+    ('monitor-conn',      '活跃连接监控',   0, 19),
+    ('health-monitor',    '健康监控',       0, 20),
+    ('dashboard',         '数据看板',       0, 21),
+    ('ai',                'AI诊断设置',     0, 22),
+    ('oracle-client',     'Oracle Client',  0, 23),
+    ('notifier',          '通知设置',       0, 24),
+    ('apikey',            'API Key管理',    0, 25),
+    ('shares',            '分享管理',       0, 26),
+    ('license',           '许可证',         0, 27),
+    ('data-management',   '数据管理',       0, 28),
+    ('um-admin',          '用户管理',       0, 29),
+    ('about',             '关于',           0, 30);
 
 -- ============================================
 -- 6. 角色-菜单-权限关联表

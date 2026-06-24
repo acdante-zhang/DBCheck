@@ -381,8 +381,9 @@ class MonitorEngine:
                 dsn = oracledb.makedsn(host, port, sid=sid)
             else:
                 dsn = f"{host}:{port}/orcl"
-            mode = oracledb.SYSDBA if inst.get('sysdba') else oracledb.DEFAULT_MODE
-            return oracledb.connect(user=user, password=password, dsn=dsn, mode=mode)
+            if inst.get('sysdba'):
+                return oracledb.connect(user=user, password=password, dsn=dsn, mode=oracledb.SYSDBA)
+            return oracledb.connect(user=user, password=password, dsn=dsn)
 
         elif db_type == 'sqlserver':
             import pyodbc

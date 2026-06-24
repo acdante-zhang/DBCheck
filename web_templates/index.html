@@ -6671,14 +6671,12 @@ async function executeFixSql(taskId, sql) {
 function showPage(name) {
   // v2.6.2：更新全局页面变量（供 AI 上下文感知使用）
   _currentPage = name;
-  // RBAC 权限校验：非admin用户不能访问admin_only页面
-  var navId = 'nav-' + name;
-  var perm = NAV_MENU_PERM[navId];
-  if (perm === 'admin_only') {
-    var usr = window._currentUser || {};
-    var isAdmin = usr.role === 'admin' || usr.auth_source === 'legacy';
-    if (!isAdmin) {
-      toastError('权限不足，该功能仅管理员可用');
+  // RBAC 权限校验：非admin用户只能访问后端分配的菜单
+  var usr = window._currentUser || {};
+  var isAdmin = usr.role === 'admin' || usr.auth_source === 'legacy';
+  if (!isAdmin && _userVisibleMenus) {
+    if (_userVisibleMenus.indexOf(name) < 0) {
+      toastError('权限不足，该菜单未分配给您');
       showPage('home');
       return;
     }
@@ -11853,34 +11851,46 @@ function doPromptResolve(id) {
 
 // ─── Auth (Login / User Center) ─────────────────
 
-// nav-item id → 菜单分类映射（admin全可见，非admin按分类控制）
-// admin_only: 仅管理员可见；basic: 所有登录用户可见
-const NAV_MENU_PERM = {
-  'nav-home': 'basic', 'nav-wizard': 'basic', 'nav-server-inspect': 'basic',
-  'nav-scheduler': 'basic', 'nav-awr': 'basic', 'nav-reports': 'basic',
-  'nav-server-history': 'basic', 'nav-trend': 'basic', 'nav-datasources': 'basic',
-  'nav-inspection-config': 'admin_only', 'nav-baseline-config': 'admin_only',
-  'nav-server-thresholds': 'admin_only', 'nav-rules': 'admin_only', 'nav-rag': 'admin_only',
-  'nav-plugin-market': 'admin_only', 'nav-sql-editor': 'basic', 'nav-remote-shell': 'admin_only',
-  'nav-monitor-slow': 'basic', 'nav-monitor-conn': 'basic', 'nav-health-monitor': 'basic',
-  'nav-dashboard': 'basic', 'nav-ai': 'admin_only', 'nav-oracle-client': 'admin_only',
-  'nav-notifier': 'admin_only', 'nav-apikey': 'admin_only', 'nav-shares': 'admin_only',
-  'nav-license': 'admin_only', 'nav-data-management': 'admin_only', 'nav-um-admin': 'admin_only',
-  'nav-about': 'basic',
-};
+// 用户可见菜单缓存（menu_code 集合）
+let _userVisibleMenus = null;
+let _userAllowedAssetIds = null;
 
 function applyMenuPermissions(user) {
   var isAdmin = !user || user.role === 'admin' || user.auth_source === 'legacy';
-  document.querySelectorAll('.nav-item').forEach(function(item) {
-    var navId = item.id || '';
-    var perm = NAV_MENU_PERM[navId];
-    if (!perm) { item.style.display = ''; return; }
-    if (perm === 'admin_only' && !isAdmin) {
-      item.style.display = 'none';
-    } else {
-      item.style.display = '';
+  if (isAdmin) {
+    // admin/legacy 全部可见
+    document.querySelectorAll('.nav-item').forEach(function(item) { item.style.display = ''; });
+    return;
+  }
+  if (_userVisibleMenus) {
+    // 按后端分配的菜单列表显示
+    document.querySelectorAll('.nav-item').forEach(function(item) {
+      var navId = item.id || '';
+      var menuCode = navId.replace('nav-', '');
+      item.style.display = _userVisibleMenus.indexOf(menuCode) > -1 ? '' : 'none';
+    });
+  }
+}
+
+async function loadUserPermissions(user) {
+  if (!user) return;
+  var isAdmin = user.role === 'admin' || user.auth_source === 'legacy';
+  if (isAdmin) { applyMenuPermissions(user); return; }
+  try {
+    // 获取用户可见菜单
+    var r = await fetch('/api/um/user/menus');
+    var d = await r.json();
+    if (d.code === 0 && d.data) {
+      _userVisibleMenus = d.data.map(function(m) { return m.menu_code; });
     }
-  });
+    // 获取用户可见数据源
+    var r2 = await fetch('/api/um/user/' + (user.id || user.user_id) + '/assets');
+    var d2 = await r2.json();
+    if (d2.code === 0 && d2.data) {
+      _userAllowedAssetIds = d2.data;
+    }
+    applyMenuPermissions(user);
+  } catch(e) { console.log('loadUserPermissions:', e.message); }
 }
 
 async function checkLogin() {
@@ -11894,7 +11904,7 @@ async function checkLogin() {
     var ue = document.getElementById('topbar-user');
     ue.style.display = '';
     document.getElementById('topbar-user-name').textContent = d.user.display_name || d.user.username;
-    applyMenuPermissions(d.user);
+    await loadUserPermissions(d.user);
   } catch(e) { showLogin(); }
 }
 
@@ -11938,7 +11948,7 @@ async function doLogin() {
       var ue = document.getElementById('topbar-user');
       ue.style.display = '';
       document.getElementById('topbar-user-name').textContent = d.user.display_name || d.user.username;
-      applyMenuPermissions(d.user);
+      await loadUserPermissions(d.user);
     } else {
       err.textContent = i18n(d.error) || i18n('webui.login_error');
       err.style.display = '';
@@ -17345,6 +17355,11 @@ function mkdirRemote() {
     for (const [cardType, renderFn] of Object.entries(renderers)) {
       if (!cards[cardType]) continue;
       if (cards[cardType]._error) continue; // 跳过查询失败的卡片
+      // RAC卡片：单机环境（gv$instance只有1行）不显示
+      if (cardType === 'rac_status') {
+        const racRows = Array.isArray(cards[cardType]) ? cards[cardType] : [];
+        if (racRows.length <= 1) continue;
+      }
       const cardHtml = renderFn(cards[cardType], dbType);
       if (cardHtml) html += cardHtml;
     }
@@ -17366,12 +17381,21 @@ function mkdirRemote() {
 
   function hmMiniTable(rows, cols) {
     if (!rows || !rows.length) return '<div style="color:var(--text-muted);padding:8px;">暂无数据</div>';
+    // 支持 [{key:'field_name', label:'中文表头'}, ...] 和 ['中文表头', ...] 两种格式
+    var keys = [], labels = [];
+    cols.forEach(function(c) {
+      if (typeof c === 'object' && c.key) { keys.push(c.key); labels.push(c.label || c.key); }
+      else { var k = String(c).toLowerCase(); keys.push(k); labels.push(c); }
+    });
     let h = '<table class="hm-mini-table"><thead><tr>';
-    cols.forEach(c => h += `<th>${c}</th>`);
+    labels.forEach(l => h += `<th>${l}</th>`);
     h += '</tr></thead><tbody>';
     rows.forEach(row => {
       h += '<tr>';
-      cols.forEach(c => h += `<td>${row[c.toLowerCase()] !== undefined ? row[c.toLowerCase()] : '-'}</td>`);
+      keys.forEach(k => {
+        var val = row[k] !== undefined ? row[k] : (row[k.toLowerCase()] !== undefined ? row[k.toLowerCase()] : '-');
+        h += `<td>${val}</td>`;
+      });
       h += '</tr>';
     });
     h += '</tbody></table>';
@@ -17385,10 +17409,13 @@ function mkdirRemote() {
   }
 
   function hmRenderRacCard(data) {
-    const rows = data.instances || data;
-    if (!rows.length) return '';
-    const cols = ['inst_id','instance_name','host_name','instance_role','status','uptime_hours'];
-    return hmCardWrap('RAC 集群状态', '🖥️', hmMiniTable(rows, ['实例ID','实例名','节点','角色','状态','运行(小时)']));
+    const rows = Array.isArray(data) ? data : (data && data.instances ? data.instances : []);
+    if (!rows || !rows.length) return '';
+    return hmCardWrap('RAC 集群状态', '🖥️', hmMiniTable(rows, [
+      {key:'inst_id',label:'实例ID'}, {key:'instance_name',label:'实例名'},
+      {key:'host_name',label:'节点'}, {key:'instance_role',label:'角色'},
+      {key:'status',label:'状态'}, {key:'uptime_hours',label:'运行(小时)'}
+    ]));
   }
 
   function hmRenderDbSizeCard(data) {
@@ -17417,7 +17444,11 @@ function mkdirRemote() {
   function hmRenderBackupCard(data) {
     const rows = Array.isArray(data) ? data : [];
     if (!rows.length) return hmCardWrap('备份状态', '💿', '<div style="color:var(--text-muted);">无最近备份记录</div>');
-    return hmCardWrap('备份状态', '💿', hmMiniTable(rows.slice(0,7), ['备份时间','状态','类型','大小(GB)','耗时(分)']));
+    return hmCardWrap('备份状态', '💿', hmMiniTable(rows.slice(0,7), [
+      {key:'backup_time',label:'备份时间'}, {key:'status',label:'状态'},
+      {key:'input_type',label:'类型'}, {key:'size_gb',label:'大小(GB)'},
+      {key:'duration_min',label:'耗时(分)'}
+    ]));
   }
 
   function hmRenderAsmCard(data) {
@@ -17469,8 +17500,11 @@ function mkdirRemote() {
     const rows = Array.isArray(data) ? data : [];
     if (!rows.length) return hmCardWrap('Schema 用户', '👤',
       '<button onclick="hmLoadSchemaUsers()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);cursor:pointer;">点击加载 Schema 用户列表</button>');
-    return hmCardWrap('Schema 用户', '👤',
-      `<div style="max-height:300px;overflow-y:auto;">${hmMiniTable(rows.slice(0,30), ['用户名','状态','创建日期','默认表空间'])}</div>` +
+    return hmCardWrap('Schema 用户', '���',
+      `<div style="max-height:300px;overflow-y:auto;">${hmMiniTable(rows.slice(0,30), [
+        {key:'username',label:'用户名'}, {key:'account_status',label:'状态'},
+        {key:'created_date',label:'创建日期'}, {key:'default_tablespace',label:'默认表空间'}
+      ])}</div>` +
       (rows.length>30?`<div style="font-size:11px;color:var(--text-muted);text-align:center;">共 ${rows.length} 个用户</div>`:''));
   }
 
@@ -17490,10 +17524,15 @@ function mkdirRemote() {
       const r = await fetch('/api/health-monitor/schema-users/' + _hmCurrentDS);
       const d = await r.json();
       if (d.ok) {
-        const card = hmRenderSchemaCard(d.users);
-        // 替换 schema_users 卡片
-        const existing = document.querySelector('.hm-card:has(.hm-card-title:contains("Schema"))');
-        if (existing) existing.outerHTML = card;
+        const cardHtml = hmRenderSchemaCard(d.users);
+        // 替换 schema_users 卡片：遍历查找标题含 Schema 的卡片
+        const titles = document.querySelectorAll('.hm-card-title');
+        for (const t of titles) {
+          if (t.textContent.indexOf('Schema') > -1) {
+            const card = t.closest('.hm-card');
+            if (card) { card.outerHTML = cardHtml; break; }
+          }
+        }
       }
     } catch(e) { toastError('加载失败: ' + e.message); }
   }
@@ -17534,7 +17573,39 @@ function mkdirRemote() {
     } catch(e) { _dbDsCache = []; }
     // 加载看板配置列表
     await dbLoadConfigList();
+    // 如果没有看板配置，自动创建一个默认健康监控看板
+    if (!_dbConfigId && _dbDsCache.length > 0) {
+      await dbCreateDefaultHealthDashboard();
+    }
     dbToggleAuto();
+  }
+
+  async function dbCreateDefaultHealthDashboard() {
+    // 自动创建一个默认健康监控看板
+    var ds = _dbDsCache[0];
+    var defaultCards = [
+      {id:'card_' + Date.now() + '_1', type:'monitor_item', title:'数据库总大小', datasource_id:ds.id, monitor_item:'db_size', custom_sql:''},
+      {id:'card_' + Date.now() + '_2', type:'monitor_item', title:'表空间使用率', datasource_id:ds.id, monitor_item:'tablespace_usage', custom_sql:''},
+      {id:'card_' + Date.now() + '_3', type:'monitor_item', title:'会话统计', datasource_id:ds.id, monitor_item:'session_stats', custom_sql:''},
+      {id:'card_' + Date.now() + '_4', type:'monitor_item', title:'实例信息', datasource_id:ds.id, monitor_item:'instance_info', custom_sql:''},
+    ];
+    _dbCards = defaultCards;
+    try {
+      const r = await fetch('/api/dashboard/configs', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({id:'', name:'默认健康监控看板', cards: defaultCards})
+      });
+      const d = await r.json();
+      if (d.ok) {
+        _dbConfigId = d.id;
+        document.getElementById('db-config-name').value = '默认健康监控看板';
+        await dbLoadConfigList();
+        var sel = document.getElementById('db-config-select');
+        if (sel) sel.value = _dbConfigId;
+        dbRenderCards();
+        dbRefreshAll();
+      }
+    } catch(e) { console.error('create default dashboard failed', e); }
   }
 
   async function dbLoadConfigList() {
@@ -17695,6 +17766,21 @@ function mkdirRemote() {
     dbRenderCards();
   }
 
+  var _dbDragId = null;
+  function dbDragStart(event, cardId) { _dbDragId = cardId; event.dataTransfer.effectAllowed = 'move'; }
+  function dbDragOver(event) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }
+  function dbDrop(event, targetId) {
+    event.preventDefault();
+    if (!_dbDragId || _dbDragId === targetId) return;
+    var fromIdx = _dbCards.findIndex(c => c.id === _dbDragId);
+    var toIdx = _dbCards.findIndex(c => c.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    var moved = _dbCards.splice(fromIdx, 1)[0];
+    _dbCards.splice(toIdx, 0, moved);
+    _dbDragId = null;
+    dbRenderCards();
+  }
+
   function dbEditCardTitle(cardId) {
     var card = _dbCards.find(c => c.id === cardId);
     if (!card) return;
@@ -17732,7 +17818,7 @@ function mkdirRemote() {
     _dbCards.forEach(card => {
       const ds = _dbDsCache.find(x => x.id === card.datasource_id);
       const dsLabel = ds ? (ds.name || ds.host+':'+ds.port) : card.datasource_id;
-      html += `<div class="db-card" id="db-card-${card.id}" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+      html += `<div class="db-card" id="db-card-${card.id}" draggable="true" ondragstart="dbDragStart(event,'${card.id}')" ondragover="dbDragOver(event)" ondrop="dbDrop(event,'${card.id}')" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:move;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--border);">
           <span id="db-card-title-${card.id}" style="font-weight:600;font-size:13px;cursor:pointer;" ondblclick="dbEditCardTitle('${card.id}')" title="双击编辑标题">${card.title}</span>
           <div style="display:flex;gap:4px;align-items:center;">
@@ -17770,6 +17856,28 @@ function mkdirRemote() {
     } catch(e) { console.error('Dashboard refresh error:', e); }
   }
 
+  // 数据库字段英文→中文映射
+  const DB_FIELD_CN_MAP = {
+    'tablespace_name':'表空间名','total_gb':'总量(GB)','used_gb':'已用(GB)','usage_pct':'使用率(%)',
+    'datafile_count':'数据文件数','status':'状态','datafile_gb':'数据文件(GB)','segment_gb':'段大小(GB)',
+    'instance_name':'实例名','host_name':'主机名','version':'版本','startup_time':'启动时间',
+    'database_role':'数据库角色','protection_mode':'保护模式','protection_level':'保护级别',
+    'open_mode':'打开模式','switchover_status':'切换状态','standby_count':'备库数',
+    'max_apply_lag_min':'最大延迟(分钟)','dest_details':'归档目的地',
+    'inst_id':'实例ID','instance_role':'实例角色','uptime_hours':'运行(小时)',
+    'total_sessions':'总会话','session_limit':'会话上限','active_sessions':'活动会话',
+    'inactive_sessions':'非活动会话','background_sessions':'后台会话',
+    'username':'用户名','account_status':'账户状态','created_date':'创建日期',
+    'default_tablespace':'默认表空间','temporary_tablespace':'临时表空间',
+    'backup_time':'备份时间','input_type':'类型','size_gb':'大小(GB)','duration_min':'耗时(分)',
+    'name':'名称','type':'类型','state':'状态','free_gb':'空闲(GB)',
+    'total_sessions':'总会话','database_status':'数据库状态',
+  };
+
+  function dbTranslateField(name) {
+    return DB_FIELD_CN_MAP[name] || name;
+  }
+
   function dbRenderCardData(card) {
     const body = document.getElementById('db-card-body-' + card.id);
     if (!body) return;
@@ -17788,7 +17896,7 @@ function mkdirRemote() {
         return;
       }
       let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>`;
-      columns.forEach(c => tableHtml += `<th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--border);">${c}</th>`);
+      columns.forEach(c => tableHtml += `<th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--border);">${dbTranslateField(c)}</th>`);
       tableHtml += '</tr></thead><tbody>';
       rows.forEach(row => {
         tableHtml += '<tr>';
@@ -17808,7 +17916,7 @@ function mkdirRemote() {
         const val = row[keys[0]];
         body.innerHTML = `<div style="text-align:center;padding:20px;">
           <div style="font-size:36px;font-weight:700;color:var(--primary);">${val !== undefined ? val : '-'}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">${keys[0]}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">${dbTranslateField(keys[0])}</div>
         </div>`;
       } else {
         body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">无数据</div>';

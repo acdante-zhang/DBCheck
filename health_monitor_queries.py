@@ -46,14 +46,14 @@ ORACLE_HEALTH_SQL = {
 
     'backup_status': """
         SELECT * FROM (
-            SELECT TO_CHAR(start_time,'YYYY-MM-DD HH24:MI') AS backup_time,
-                   status, input_type,
-                   ROUND(input_bytes/1073741824,2) AS size_gb,
-                   ROUND(elapsed_seconds/60,1) AS duration_min,
-                   output_device_type
+            SELECT TO_CHAR(START_TIME,'YYYY-MM-DD HH24:MI') AS backup_time,
+                   STATUS, INPUT_TYPE,
+                   NULL AS size_gb,
+                   ROUND(ELAPSED_SECONDS/60,1) AS duration_min,
+                   OUTPUT_DEVICE_TYPE
             FROM v$rman_backup_job_details
-            WHERE start_time > SYSDATE - 30
-            ORDER BY start_time DESC
+            WHERE START_TIME > SYSDATE - 30
+            ORDER BY START_TIME DESC
         ) WHERE ROWNUM <= 7
     """,
 
@@ -69,26 +69,29 @@ ORACLE_HEALTH_SQL = {
 
     'tablespace_usage': """
         SELECT t.tablespace_name,
-               ROUND(GREATEST(NVL(SUM(df.bytes),0), NVL(SUM(df.maxbytes),0))/1073741824,2) AS total_gb,
-               ROUND((NVL(SUM(df.bytes),0) - NVL(SUM(fs.bytes),0))/1073741824,2) AS used_gb,
-               ROUND((NVL(SUM(df.bytes),0) - NVL(SUM(fs.bytes),0)) /
-                     NULLIF(GREATEST(NVL(SUM(df.bytes),0), NVL(SUM(df.maxbytes),0)), 0) * 100, 1) AS usage_pct,
-               COUNT(df.file_name) AS datafile_count,
-               CASE WHEN (NVL(SUM(df.bytes),0) - NVL(SUM(fs.bytes),0)) /
-                        NULLIF(GREATEST(NVL(SUM(df.bytes),0), NVL(SUM(df.maxbytes),0)), 0) * 100 > 90
+               ROUND(GREATEST(NVL(df.bytes,0), NVL(df.maxbytes,0))/1073741824,2) AS total_gb,
+               ROUND(GREATEST(NVL(df.bytes,0) - NVL(fs.bytes,0), 0)/1073741824,2) AS used_gb,
+               ROUND(GREATEST(NVL(df.bytes,0) - NVL(fs.bytes,0), 0) /
+                     NULLIF(GREATEST(NVL(df.bytes,0), NVL(df.maxbytes,0)), 0) * 100, 1) AS usage_pct,
+               NVL(df.file_count,0) AS datafile_count,
+               CASE WHEN GREATEST(NVL(df.bytes,0) - NVL(fs.bytes,0), 0) /
+                        NULLIF(GREATEST(NVL(df.bytes,0), NVL(df.maxbytes,0)), 0) * 100 > 90
                     THEN 'CRITICAL'
-                    WHEN (NVL(SUM(df.bytes),0) - NVL(SUM(fs.bytes),0)) /
-                        NULLIF(GREATEST(NVL(SUM(df.bytes),0), NVL(SUM(df.maxbytes),0)), 0) * 100 > 80
+                    WHEN GREATEST(NVL(df.bytes,0) - NVL(fs.bytes,0), 0) /
+                        NULLIF(GREATEST(NVL(df.bytes,0), NVL(df.maxbytes,0)), 0) * 100 > 80
                     THEN 'WARNING'
                     ELSE 'OK' END AS status
         FROM dba_tablespaces t
-        LEFT JOIN dba_data_files df
+        LEFT JOIN (SELECT tablespace_name,
+                          SUM(bytes) AS bytes,
+                          SUM(maxbytes) AS maxbytes,
+                          COUNT(*) AS file_count
+                   FROM dba_data_files GROUP BY tablespace_name) df
                ON df.tablespace_name = t.tablespace_name
         LEFT JOIN (SELECT tablespace_name, SUM(bytes) AS bytes
                    FROM dba_free_space GROUP BY tablespace_name) fs
                ON fs.tablespace_name = t.tablespace_name
         WHERE t.contents = 'PERMANENT'
-        GROUP BY t.tablespace_name
         ORDER BY usage_pct DESC
     """,
 
