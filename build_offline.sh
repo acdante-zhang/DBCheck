@@ -46,7 +46,10 @@ PyPDF2>=3.0.1
 bcrypt>=4.0.0
 PyJWT>=2.7.0
 REQS
-pip3 download --progress-bar on -d "$OUTPUT_DIR/wheels" -r /tmp/acdante_reqs.txt
+pip3 download --progress-bar on \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    --trusted-host pypi.tuna.tsinghua.edu.cn \
+    -d "$OUTPUT_DIR/wheels" -r /tmp/acdante_reqs.txt
 echo ""
 echo "  ✅ 已下载 $(ls "$OUTPUT_DIR/wheels"/*.whl 2>/dev/null | wc -l) 个 wheel 包"
 
