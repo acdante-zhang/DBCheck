@@ -29,7 +29,7 @@ _script_dir = BASE_DIR
 if _script_dir not in sys.path:
     sys.path.insert(0, _script_dir)
 
-from flask import Flask, request, jsonify, render_template, Response, send_file
+from flask import Flask, request, jsonify, render_template, Response, send_file, session
 from version import __version__
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import socket
