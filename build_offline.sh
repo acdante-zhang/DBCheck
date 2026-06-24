@@ -21,7 +21,8 @@ mkdir -p "$OUTPUT_DIR/app"
 
 # 1. 下载依赖
 echo ""
-echo "[1/4] 下载 Python 依赖包..."
+echo "[1/4] 下载 Python 依赖包（49 个，约 250MB，请耐心等待）..."
+echo "   正在下载中..."
 cat > /tmp/acdante_reqs.txt << 'REQS'
 python-docx>=0.8.10
 docxtpl>=0.16.0
@@ -45,7 +46,8 @@ PyPDF2>=3.0.1
 bcrypt>=4.0.0
 PyJWT>=2.7.0
 REQS
-pip3 download -d "$OUTPUT_DIR/wheels" -r /tmp/acdante_reqs.txt 2>&1 | grep "Successfully downloaded" || true
+pip3 download --progress-bar on -d "$OUTPUT_DIR/wheels" -r /tmp/acdante_reqs.txt
+echo ""
 echo "  ✅ 已下载 $(ls "$OUTPUT_DIR/wheels"/*.whl 2>/dev/null | wc -l) 个 wheel 包"
 
 # 2. 复制代码
