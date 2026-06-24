@@ -63,6 +63,10 @@ class HealthMonitorEngine:
     def stop(self):
         self._running = False
 
+    @property
+    def is_running(self):
+        return self._running
+
     def set_instance_ids(self, instance_ids):
         self._instance_ids = list(instance_ids)
 
@@ -99,6 +103,18 @@ class HealthMonitorEngine:
     def _collect_loop(self):
         while self._running:
             start = time.time()
+            # 每轮动态获取最新数据源列表（支持新增/删除/启停自动感知）
+            try:
+                from pro.instance_manager import get_instance_manager
+                im = get_instance_manager()
+                all_instances = im.get_all_instances(mask_password=False)
+                enabled_ids = [str(i['id']) for i in all_instances if i.get('enabled', True)]
+                # 合并外部设置的ID和当前启用的ID
+                combined = list(set(self._instance_ids) | set(enabled_ids))
+                self._instance_ids = combined
+            except Exception:
+                pass
+
             for iid in list(self._instance_ids):
                 try:
                     self._collect_one(iid)
@@ -231,6 +247,85 @@ class HealthMonitorEngine:
             return []
         finally:
             cursor.close()
+
+    # ── 自定义SQL执行 ─────────────────────────────────────
+
+    def execute_custom_sql(self, instance_id, sql, timeout=None):
+        """在指定数据源执行自定义SQL（仅允许SELECT）
+        返回: {'ok': True, 'columns': [...], 'rows': [...], 'row_count': N} 或 {'ok': False, 'error': str}
+        """
+        import re
+
+        # 安全校验：仅允许 SELECT 语句
+        sql_stripped = sql.strip()
+        if not re.match(r'^\s*SELECT\b', sql_stripped, re.IGNORECASE):
+            return {'ok': False, 'error': '仅允许 SELECT 查询语句'}
+
+        # 禁止危险关键字
+        dangerous = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE']
+        sql_upper = sql_stripped.upper()
+        for kw in dangerous:
+            if re.search(r'\b' + kw + r'\b', sql_upper):
+                return {'ok': False, 'error': f'不允许使用 {kw} 语句'}
+
+        if timeout is None:
+            timeout = self.QUERY_TIMEOUT
+
+        from pro.instance_manager import get_instance_manager
+        im = get_instance_manager()
+        try:
+            inst = im.get_instance_decrypted(int(instance_id))
+        except Exception:
+            inst = None
+        if not inst:
+            return {'ok': False, 'error': f'实例 {instance_id} 不存在或解密失败'}
+
+        db_type = inst.get('db_type', '').lower()
+        conn = None
+        cursor = None
+
+        try:
+            conn = self._connect(inst, db_type)
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            if cursor.description:
+                columns = [col[0].lower() for col in cursor.description]
+                rows = []
+                row_count = 0
+                for row in cursor.fetchall():
+                    if row_count >= 500:
+                        break
+                    rows.append(dict(zip(columns, row)))
+                    row_count += 1
+                return {'ok': True, 'columns': columns, 'rows': rows, 'row_count': len(rows)}
+            return {'ok': True, 'columns': [], 'rows': [], 'row_count': 0}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+        finally:
+            try:
+                if cursor:
+                    cursor.close()
+            except Exception:
+                pass
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+    def trigger_collect(self):
+        """手动触发一次采集（非阻塞）"""
+        import threading
+        t = threading.Thread(target=self._collect_all, daemon=True)
+        t.start()
+
+    def _collect_all(self):
+        """采集所有当前数据源"""
+        for iid in list(self._instance_ids):
+            try:
+                self._collect_one(iid)
+            except Exception:
+                pass
 
 
 # ── 全局单例获取 ──────────────────────────────────────────

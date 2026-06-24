@@ -262,16 +262,23 @@
     <script>
         // ========== 工具函数 ==========
         const API = (url, options = {}) => {
+            // 优先使用 JWT token（兼容旧版），同时携带 session cookie
             const token = localStorage.getItem('token');
             const headers = {
                 'Content-Type': 'application/json',
                 ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
                 ...options.headers
             };
-            return fetch(url, { ...options, headers }).then(r => {
+            // credentials: 'same-origin' 确保携带 Flask session cookie
+            return fetch(url, { ...options, headers, credentials: 'same-origin' }).then(r => {
                 if (r.status === 401) {
-                    localStorage.clear();
-                    window.location.href = '/um/login';
+                    localStorage.removeItem('token');
+                    // 如果是在主应用iframe中，刷新父页面触发登录
+                    if (window.parent && window.parent !== window) {
+                        window.parent.location.href = '/';
+                    } else {
+                        window.location.href = '/';
+                    }
                 }
                 return r.json();
             });
@@ -313,6 +320,19 @@
 
         // ========== 页面初始化 ==========
         async function init() {
+            // 尝试通过主应用 session 获取用户信息
+            try {
+                const mainRes = await fetch('/api/auth/status', { credentials: 'same-origin' });
+                const mainData = await mainRes.json();
+                if (mainData.ok && mainData.logged_in) {
+                    document.getElementById('currentUser').textContent =
+                        `${mainData.user.display_name || mainData.user.username} (${mainData.user.role})`;
+                    loadUsers();
+                    return;
+                }
+            } catch (e) { /* fallback to RBAC JWT */ }
+
+            // Fallback: RBAC JWT 认证
             try {
                 const res = await API('/api/um/auth/status');
                 if (res.code === 0 && res.data.user) {
@@ -320,7 +340,12 @@
                         `${res.data.user.nickname || res.data.user.username} (${res.data.user.roles.join(', ')})`;
                 }
             } catch (e) {
-                window.location.href = '/um/login';
+                // 如果在iframe中，不跳转
+                if (window.parent && window.parent !== window) {
+                    document.getElementById('currentUser').textContent = '请先登录';
+                } else {
+                    window.location.href = '/um/login';
+                }
             }
             loadUsers();
         }

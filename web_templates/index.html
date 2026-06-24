@@ -4076,6 +4076,9 @@ function formatBytes(bytes) {
     <div class="nav-item" onclick="showPage('health-monitor')" id="nav-health-monitor">
       <span class="icon">💚</span> <span>健康监控</span>
     </div>
+    <div class="nav-item" onclick="showPage('dashboard')" id="nav-dashboard">
+      <span class="icon">📊</span> <span>数据看板</span>
+    </div>
 
     <!-- ── 系统 ── -->
     <div class="nav-section" data-i18n="webui.nav_section_system">系统</div>
@@ -5847,10 +5850,79 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
         </div>
       </div>
 
-      <!-- ═══ RBAC 用户管理页面（内嵌 iframe） ═══ -->
-      <div class="page" id="page-um-admin" style="display:none;flex-direction:column;height:100%;">
-        <iframe id="um-admin-iframe" src="/um/admin" style="width:100%;height:100%;border:none;flex:1;"></iframe>
+      <!-- ═══ 数据看板大屏 ═══ -->
+      <div class="page" id="page-dashboard" style="display:none;flex-direction:column;height:100%;">
+        <div class="page-toolbar" style="padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;">
+          <label style="font-weight:600;font-size:13px;">📊 数据看板</label>
+          <select id="db-config-select" onchange="dbLoadConfig()" style="min-width:150px;max-width:250px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);">
+            <option value="">-- 新建看板 --</option>
+          </select>
+          <input type="text" id="db-config-name" placeholder="看板名称" style="width:150px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:13px;" value="默认看板">
+          <button onclick="dbSaveConfig()" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--primary);color:#fff;cursor:pointer;font-size:13px;">💾 保存</button>
+          <button onclick="dbAddCard()" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:13px;">+ 添加卡片</button>
+          <span style="margin-left:auto;"></span>
+          <button onclick="dbRefreshAll()" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:13px;">🔄 刷新</button>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+            <input type="checkbox" id="db-auto-refresh" checked onchange="dbToggleAuto()"> 自动刷新
+          </label>
+          <input type="number" id="db-interval" value="30" min="10" max="300" style="width:60px;padding:4px;border-radius:6px;border:1px solid var(--border);font-size:12px;">
+          <span style="font-size:11px;color:var(--text-muted);">秒</span>
+          <button onclick="dbToggleFullscreen()" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:13px;" title="全屏">📺</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:12px 16px;" id="db-cards-container">
+          <div id="db-empty" style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+            <div style="font-size:48px;margin-bottom:12px;">📊</div>
+            <div style="font-size:16px;font-weight:600;">数据看板</div>
+            <div style="font-size:13px;margin-top:4px;">点击「+ 添加卡片」创建你的第一个监控卡片</div>
+            <div style="font-size:13px;margin-top:4px;">支持多数据源同屏对比、预设监控项和自定义SQL</div>
+          </div>
+        </div>
+        <!-- 卡片配置模态框 -->
+        <div id="db-modal-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:1000;align-items:center;justify-content:center;">
+          <div style="background:var(--surface);border-radius:12px;padding:24px;min-width:480px;max-width:600px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);" id="db-modal-content"></div>
+        </div>
       </div>
+
+      <!-- ═══ RBAC 用户管理页面（原生集成） ═══ -->
+      <div class="page" id="page-um-admin" style="display:none;flex-direction:column;height:100%;">
+        <div class="um-admin-toolbar" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;">
+          <div class="um-tabs" style="display:flex;gap:4px;">
+            <button class="um-tab-btn active" onclick="umSwitchTab('users')" id="um-tab-users">👥 用户管理</button>
+            <button class="um-tab-btn" onclick="umSwitchTab('roles')" id="um-tab-roles">🔑 角色管理</button>
+            <button class="um-tab-btn" onclick="umSwitchTab('menus')" id="um-tab-menus">📋 菜单权限</button>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);" id="um-admin-info"></div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:16px;" id="um-content-area">
+          <!-- 动态渲染 -->
+        </div>
+        <!-- 通用模态框 -->
+        <div id="um-modal-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:1000;align-items:center;justify-content:center;">
+          <div style="background:var(--surface);border-radius:12px;padding:24px;min-width:420px;max-width:640px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);" id="um-modal-content"></div>
+        </div>
+      </div>
+      <style>
+        .um-tab-btn { padding: 8px 18px; border: none; background: transparent; cursor: pointer; font-size: 14px; color: var(--text-muted); border-radius: 8px; transition: all 0.2s; }
+        .um-tab-btn.active { background: var(--primary); color: #fff; font-weight: 600; }
+        .um-tab-btn:hover:not(.active) { background: var(--border); color: var(--text); }
+        .um-btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; }
+        .um-btn-primary { background: var(--primary); color: #fff; }
+        .um-btn-primary:hover { opacity: 0.85; }
+        .um-btn-danger { background: #e74c3c; color: #fff; }
+        .um-btn-danger:hover { background: #c0392b; }
+        .um-btn-sm { padding: 5px 10px; font-size: 12px; }
+        .um-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .um-table th { text-align: left; padding: 10px 12px; background: var(--border); color: var(--text); font-weight: 600; }
+        .um-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+        .um-table tr:hover { background: rgba(0,0,0,0.02); }
+        .um-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+        .um-badge-success { background: #d4edda; color: #155724; }
+        .um-badge-danger { background: #f8d7da; color: #721c24; }
+        .um-empty { text-align: center; padding: 40px; color: var(--text-muted); }
+        .um-form-group { margin-bottom: 12px; }
+        .um-form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: var(--text); }
+        .um-form-group input, .um-form-group select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--text); }
+      </style>
 
       <!-- 巡检配置管理页面 -->
       <div class="page" id="page-inspection-config" style="display:none;">
@@ -6642,6 +6714,7 @@ function showPage(name) {
     'monitor-slow': [i18n('monitor.slow_title') || '实时慢查询', i18n('monitor.slow_desc') || '定时拉取各数据源 Top SQL'],
     'monitor-conn': [i18n('monitor.conn_title') || '活跃连接监控', i18n('monitor.conn_desc') || '实时查看各数据源连接数'],
     'health-monitor': ['💚 健康监控', '实时监控数据库关键指标，快速发现异常'],
+    'dashboard': ['📊 数据看板', '自定义多数据源大屏监控'],
     'um-admin': ['👥 用户管理', 'RBAC 角色与权限管理'],
     'data-management': [i18n('webui.data_management_title') || '数据管理', i18n('webui.data_management_desc') || '管理 Acdante DB Inspector 自身数据文件'],
     'awr': [i18n('webui.awr_nav') || 'AWR 报告分析', i18n('webui.awr_desc') || '上传 Oracle AWR HTML 报告自动生成分析报告'],
@@ -6698,6 +6771,7 @@ function showPage(name) {
   if (name === 'monitor-slow') loadMonitorSlow();
   if (name === 'monitor-conn') loadMonitorConn();
   if (name === 'health-monitor') hmInitPage();
+  if (name === 'dashboard') dbInitPage();
   if (name === 'um-admin') loadUmAdmin();
   // SQL 编辑器需要 height 约束（其他页面用 min-height 允许滚动）
   var mainEl = document.querySelector('.main');
@@ -17067,6 +17141,8 @@ function mkdirRemote() {
         d.datasources.forEach(inst => {
           sel.innerHTML += `<option value="${inst.id}">${inst.name || inst.host+':'+inst.port} (${inst.db_type||''})</option>`;
         });
+        // 自动启动健康监控引擎（传入所有启用的数据源ID）
+        hmAutoStartEngine(d.datasources);
       }
       if (d.datasources && d.datasources.length === 0) {
         document.getElementById('hm-empty').style.display = 'block';
@@ -17076,6 +17152,35 @@ function mkdirRemote() {
       sel.innerHTML = '<option value="">-- 加载失败 --</option>';
     }
     hmToggleAuto();
+  }
+
+  async function hmAutoStartEngine(datasources) {
+    try {
+      // 先检查引擎状态
+      const statusRes = await fetch('/api/health-monitor/status');
+      const statusData = await statusRes.json();
+      if (statusData.ok && statusData.status && statusData.status.running) {
+        // 引擎已在运行，刷新数据源列表
+        const enabledIds = datasources.filter(d => d.enabled !== false).map(d => d.id);
+        await fetch('/api/health-monitor/start', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ instance_ids: enabledIds, interval: 30 })
+        });
+        return;
+      }
+      // 启动引擎
+      const enabledIds = datasources.filter(d => d.enabled !== false).map(d => d.id);
+      if (enabledIds.length > 0) {
+        await fetch('/api/health-monitor/start', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ instance_ids: enabledIds, interval: 30 })
+        });
+      }
+    } catch(e) {
+      console.log('Health monitor engine auto-start:', e.message);
+    }
   }
 
   async function hmSwitchDS() {
@@ -17309,12 +17414,575 @@ function mkdirRemote() {
     if (document.getElementById('hm-auto-refresh').checked) hmStartTimer();
   }
 
-  function loadUmAdmin() {
-    // 内嵌 iframe 方式加载 RBAC 管理页面
-    const iframe = document.getElementById('um-admin-iframe');
-    if (iframe && !iframe.src) {
-      iframe.src = '/um/admin';
+  // ═══════════════════════════════════════════════════════
+  //  数据看板大屏（Dashboard）
+  // ═══════════════════════════════════════════════════════
+  let _dbCards = [];
+  let _dbConfigId = '';
+  let _dbTimer = null;
+  let _dbDsCache = [];
+
+  async function dbInitPage() {
+    // 加载数据源缓存
+    try {
+      const r = await fetch('/api/pro/datasources');
+      const d = await r.json();
+      _dbDsCache = d.datasources || [];
+    } catch(e) { _dbDsCache = []; }
+    // 加载看板配置列表
+    await dbLoadConfigList();
+    dbToggleAuto();
+  }
+
+  async function dbLoadConfigList() {
+    const sel = document.getElementById('db-config-select');
+    try {
+      const r = await fetch('/api/dashboard/configs');
+      const d = await r.json();
+      sel.innerHTML = '<option value="">-- 新建看板 --</option>';
+      if (d.configs) {
+        d.configs.forEach(c => {
+          sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+        });
+        if (d.configs.length > 0 && !_dbConfigId) {
+          // 自动加载第一个看板
+          _dbConfigId = d.configs[0].id;
+          sel.value = _dbConfigId;
+          document.getElementById('db-config-name').value = d.configs[0].name;
+          _dbCards = d.configs[0].cards || [];
+          dbRenderCards();
+        }
+      }
+    } catch(e) { /* ignore */ }
+  }
+
+  async function dbLoadConfig() {
+    const sel = document.getElementById('db-config-select');
+    const val = sel.value;
+    if (!val) {
+      _dbConfigId = '';
+      _dbCards = [];
+      document.getElementById('db-config-name').value = '默认看板';
+      dbRenderCards();
+      return;
     }
+    _dbConfigId = val;
+    try {
+      const r = await fetch('/api/dashboard/configs');
+      const d = await r.json();
+      const cfg = (d.configs || []).find(c => c.id === val);
+      if (cfg) {
+        _dbCards = cfg.cards || [];
+        document.getElementById('db-config-name').value = cfg.name;
+        dbRenderCards();
+        dbRefreshAll();
+      }
+    } catch(e) { /* ignore */ }
+  }
+
+  async function dbSaveConfig() {
+    const name = document.getElementById('db-config-name').value.trim() || '默认看板';
+    try {
+      const r = await fetch('/api/dashboard/configs', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ id: _dbConfigId, name, cards: _dbCards })
+      });
+      const d = await r.json();
+      if (d.ok) {
+        _dbConfigId = d.id;
+        dbShowToast('看板已保存');
+        dbLoadConfigList();
+      } else {
+        dbShowToast(d.error || '保存失败', 'error');
+      }
+    } catch(e) { dbShowToast('保存失败: ' + e.message, 'error'); }
+  }
+
+  function dbAddCard() {
+    const dsOptions = _dbDsCache.map(ds =>
+      `<option value="${ds.id}">${ds.name || ds.host+':'+ds.port} (${ds.db_type||''})</option>`
+    ).join('');
+
+    document.getElementById('db-modal-content').innerHTML = `
+      <h3 style="margin:0 0 16px;">添加监控卡片</h3>
+      <div class="um-form-group"><label>卡片标题</label><input id="db-card-title" placeholder="如：总会话数"></div>
+      <div class="um-form-group"><label>数据源</label><select id="db-card-ds"><option value="">-- 选择数据源 --</option>${dsOptions}</select></div>
+      <div class="um-form-group"><label>卡片类型</label><select id="db-card-type" onchange="dbCardTypeChange()">
+        <option value="metric">数字卡片</option><option value="table">表格卡片</option><option value="custom_sql">自定义SQL</option>
+      </select></div>
+      <div id="db-card-monitor-group" class="um-form-group"><label>监控项</label><select id="db-card-monitor"><option value="">-- 选择数据源后加载 --</option></select></div>
+      <div id="db-card-sql-group" class="um-form-group" style="display:none;"><label>SQL语句（仅SELECT）</label><textarea id="db-card-sql" rows="4" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-family:monospace;font-size:12px;" placeholder="SELECT ..."></textarea></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="um-btn" onclick="document.getElementById('db-modal-overlay').style.display='none'" style="background:var(--border);">取消</button>
+        <button class="um-btn um-btn-primary" onclick="dbConfirmAddCard()">添加</button>
+      </div>`;
+    document.getElementById('db-modal-overlay').style.display = 'flex';
+    // 数据源变更时加载监控项
+    document.getElementById('db-card-ds').onchange = dbLoadMonitorItems;
+    document.getElementById('db-card-type').onchange = dbCardTypeChange;
+  }
+
+  function dbCardTypeChange() {
+    const type = document.getElementById('db-card-type').value;
+    document.getElementById('db-card-monitor-group').style.display = type === 'custom_sql' ? 'none' : '';
+    document.getElementById('db-card-sql-group').style.display = type === 'custom_sql' ? '' : 'none';
+  }
+
+  async function dbLoadMonitorItems() {
+    const dsId = document.getElementById('db-card-ds').value;
+    const sel = document.getElementById('db-card-monitor');
+    sel.innerHTML = '<option value="">-- 加载中 --</option>';
+    if (!dsId) { sel.innerHTML = '<option value="">-- 选择数据源后加载 --</option>'; return; }
+    try {
+      const r = await fetch('/api/dashboard/health-items');
+      const d = await r.json();
+      const ds = _dbDsCache.find(x => x.id === dsId);
+      const dbType = ds ? ds.db_type : 'oracle';
+      const items = (d.items || {})[dbType] || [];
+      sel.innerHTML = '<option value="">-- 选择监控项 --</option>' +
+        items.map(i => `<option value="${i.key}">${i.icon} ${i.title}</option>`).join('');
+    } catch(e) { sel.innerHTML = '<option value="">-- 加载失败 --</option>'; }
+  }
+
+  function dbConfirmAddCard() {
+    const title = document.getElementById('db-card-title').value.trim() || '未命名卡片';
+    const dsId = document.getElementById('db-card-ds').value;
+    const type = document.getElementById('db-card-type').value;
+    const monitorItem = type === 'custom_sql' ? '' : document.getElementById('db-card-monitor').value;
+    const customSql = type === 'custom_sql' ? document.getElementById('db-card-sql').value.trim() : '';
+
+    if (!dsId) { dbShowToast('请选择数据源', 'error'); return; }
+    if (type === 'custom_sql' && !customSql) { dbShowToast('请输入SQL语句', 'error'); return; }
+    if (type !== 'custom_sql' && !monitorItem) { dbShowToast('请选择监控项', 'error'); return; }
+
+    _dbCards.push({
+      id: 'card_' + Date.now(),
+      type, title, datasource_id: dsId, monitor_item: monitorItem, custom_sql: customSql
+    });
+    document.getElementById('db-modal-overlay').style.display = 'none';
+    dbRenderCards();
+    dbRefreshAll();
+  }
+
+  function dbDeleteCard(cardId) {
+    _dbCards = _dbCards.filter(c => c.id !== cardId);
+    dbRenderCards();
+  }
+
+  function dbRenderCards() {
+    const container = document.getElementById('db-cards-container');
+    const empty = document.getElementById('db-empty');
+    if (_dbCards.length === 0) {
+      empty.style.display = 'block';
+      // 移除所有卡片（保留empty）
+      container.querySelectorAll('.db-card').forEach(el => el.remove());
+      return;
+    }
+    empty.style.display = 'none';
+    // 保留现有的卡片元素，更新grid
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:14px;" id="db-grid">';
+    _dbCards.forEach(card => {
+      const ds = _dbDsCache.find(x => x.id === card.datasource_id);
+      const dsLabel = ds ? (ds.name || ds.host+':'+ds.port) : card.datasource_id;
+      html += `<div class="db-card" id="db-card-${card.id}" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--border);">
+          <span style="font-weight:600;font-size:13px;">${card.title}</span>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <span style="font-size:10px;color:var(--text-muted);background:var(--surface);padding:2px 6px;border-radius:4px;">${dsLabel}</span>
+            <span style="font-size:10px;color:var(--text-muted);">${card.type==='custom_sql'?'SQL':card.monitor_item||''}</span>
+            <button onclick="dbDeleteCard('${card.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);padding:0 4px;" title="删除">✕</button>
+          </div>
+        </div>
+        <div style="padding:12px 14px;min-height:80px;max-height:350px;overflow-y:auto;" id="db-card-body-${card.id}">
+          <div style="text-align:center;color:var(--text-muted);padding:20px;">加载中...</div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+    // 移除旧卡片，保留empty
+    container.querySelectorAll('.db-card').forEach(el => el.remove());
+    const grid = container.querySelector('#db-grid');
+    if (grid) grid.remove();
+    container.insertAdjacentHTML('beforeend', html);
+  }
+
+  async function dbRefreshAll() {
+    if (_dbCards.length === 0) return;
+    try {
+      const r = await fetch('/api/dashboard/data', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ cards: _dbCards })
+      });
+      const d = await r.json();
+      if (d.ok && d.cards) {
+        d.cards.forEach(card => dbRenderCardData(card));
+      }
+    } catch(e) { console.error('Dashboard refresh error:', e); }
+  }
+
+  function dbRenderCardData(card) {
+    const body = document.getElementById('db-card-body-' + card.id);
+    if (!body) return;
+
+    if (card.error) {
+      body.innerHTML = `<div style="text-align:center;color:#e74c3c;padding:16px;">⚠️ ${card.error}</div>`;
+      return;
+    }
+
+    if (card.type === 'custom_sql' || card.type === 'table' || (card.rows && card.rows.length > 0)) {
+      // 表格渲染
+      const columns = card.columns || [];
+      const rows = card.rows || [];
+      if (rows.length === 0) {
+        body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">暂无数据</div>';
+        return;
+      }
+      let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>`;
+      columns.forEach(c => tableHtml += `<th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--border);">${c}</th>`);
+      tableHtml += '</tr></thead><tbody>';
+      rows.forEach(row => {
+        tableHtml += '<tr>';
+        columns.forEach(c => {
+          const val = row[c] !== undefined ? row[c] : '-';
+          tableHtml += `<td style="padding:5px 8px;border-bottom:1px solid var(--border);">${val}</td>`;
+        });
+        tableHtml += '</tr>';
+      });
+      tableHtml += '</tbody></table>';
+      body.innerHTML = tableHtml;
+    } else if (card.type === 'metric' && card.rows && card.rows.length === 1) {
+      // 数字卡片：显示第一个值
+      const row = card.rows[0];
+      const keys = Object.keys(row);
+      if (keys.length >= 1) {
+        const val = row[keys[0]];
+        body.innerHTML = `<div style="text-align:center;padding:20px;">
+          <div style="font-size:36px;font-weight:700;color:var(--primary);">${val !== undefined ? val : '-'}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">${keys[0]}</div>
+        </div>`;
+      } else {
+        body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">无数据</div>';
+      }
+    } else {
+      body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">数据格式不支持</div>';
+    }
+  }
+
+  function dbToggleAuto() {
+    const checked = document.getElementById('db-auto-refresh').checked;
+    if (checked) {
+      dbStartTimer();
+    } else {
+      dbStopTimer();
+    }
+  }
+
+  function dbStartTimer() {
+    dbStopTimer();
+    const interval = (parseInt(document.getElementById('db-interval').value) || 30) * 1000;
+    _dbTimer = setInterval(() => dbRefreshAll(), interval);
+  }
+
+  function dbStopTimer() {
+    if (_dbTimer) { clearInterval(_dbTimer); _dbTimer = null; }
+  }
+
+  function dbToggleFullscreen() {
+    const el = document.getElementById('page-dashboard');
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  function dbShowToast(msg, type) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:9999;animation:fadeIn 0.3s;';
+    el.style.background = type === 'error' ? '#e74c3c' : '#27ae60';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 2500);
+  }
+
+  function loadUmAdmin() {
+    // 原生集成 RBAC 管理（已弃用 iframe）
+    umLoadUsers();
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  RBAC 用户管理（原生集成）
+  // ═══════════════════════════════════════════════════════
+  let _umCurrentTab = 'users';
+
+  function umSwitchTab(tab) {
+    _umCurrentTab = tab;
+    document.querySelectorAll('.um-tab-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById('um-tab-' + tab);
+    if (btn) btn.classList.add('active');
+    if (tab === 'users') umLoadUsers();
+    else if (tab === 'roles') umLoadRoles();
+    else if (tab === 'menus') umLoadMenus();
+  }
+
+  // ── 通用工具 ──
+  function umApi(url, options = {}) {
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    return fetch(url, { ...options, headers, credentials: 'same-origin' }).then(r => {
+      if (r.status === 401) { window.location.href = '/'; }
+      return r.json();
+    });
+  }
+
+  function umShowToast(msg, type) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:9999;animation:fadeIn 0.3s;';
+    el.style.background = type === 'error' ? '#e74c3c' : '#27ae60';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 2500);
+  }
+
+  function umOpenModal(title, bodyHtml, onSave) {
+    const overlay = document.getElementById('um-modal-overlay');
+    document.getElementById('um-modal-content').innerHTML =
+      `<h3 style="margin:0 0 16px;font-size:16px;">${title}</h3>${bodyHtml}
+       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+         <button class="um-btn" onclick="document.getElementById('um-modal-overlay').style.display='none'" style="background:var(--border);">取消</button>
+         <button class="um-btn um-btn-primary" id="um-modal-save-btn">保存</button>
+       </div>`;
+    overlay.style.display = 'flex';
+    document.getElementById('um-modal-save-btn').onclick = async () => {
+      try { await onSave(); overlay.style.display = 'none'; } catch(e) { umShowToast(e.message || '保存失败', 'error'); }
+    };
+  }
+
+  // ── 用户管理 ──
+  async function umLoadUsers() {
+    const area = document.getElementById('um-content-area');
+    area.innerHTML = '<div class="um-empty">加载中...</div>';
+    try {
+      const res = await umApi('/api/um/user/list?page=1&size=50');
+      const users = (res.code === 0 && res.data) ? res.data.items : [];
+      area.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:16px;">用户列表 (${res.data ? res.data.total : 0})</h3>
+          <button class="um-btn um-btn-primary" onclick="umShowCreateUser()">+ 新建用户</button>
+        </div>
+        ${users.length === 0 ? '<div class="um-empty">暂无用户</div>' : `
+        <table class="um-table"><thead><tr>
+          <th>ID</th><th>用户名</th><th>昵称</th><th>邮箱</th><th>状态</th><th>创建时间</th><th>操作</th>
+        </tr></thead><tbody>
+        ${users.map(u => `<tr>
+          <td>${u.id}</td><td><strong>${u.username}</strong></td><td>${u.nickname || '-'}</td>
+          <td>${u.email || '-'}</td>
+          <td><span class="um-badge ${u.status===1?'um-badge-success':'um-badge-danger'}">${u.status===1?'启用':'禁用'}</span></td>
+          <td>${(u.created_at||'').substring(0,10)}</td>
+          <td>
+            <button class="um-btn um-btn-sm um-btn-primary" onclick="umShowEditUser(${u.id})">编辑</button>
+            <button class="um-btn um-btn-sm" onclick="umShowAssignRoles(${u.id},'${u.username}')" style="background:#f39c12;color:#fff;">角色</button>
+            <button class="um-btn um-btn-sm um-btn-danger" onclick="umDeleteUser(${u.id},'${u.username}')">删除</button>
+          </td>
+        </tr>`).join('')}
+        </tbody></table>`}`;
+    } catch(e) { area.innerHTML = '<div class="um-empty">加载失败: ' + e.message + '</div>'; }
+  }
+
+  function umShowCreateUser() {
+    umOpenModal('新建用户', `
+      <div class="um-form-group"><label>用户名</label><input id="um-new-username" placeholder="登录用户名"></div>
+      <div class="um-form-group"><label>密码</label><input type="password" id="um-new-password" placeholder="至少6位"></div>
+      <div class="um-form-group"><label>昵称</label><input id="um-new-nickname" placeholder="显示名称"></div>
+      <div class="um-form-group"><label>邮箱</label><input id="um-new-email" placeholder="email@example.com"></div>
+    `, async () => {
+      const username = document.getElementById('um-new-username').value.trim();
+      const password = document.getElementById('um-new-password').value;
+      const nickname = document.getElementById('um-new-nickname').value.trim();
+      const email = document.getElementById('um-new-email').value.trim();
+      if (!username || !password) throw new Error('用户名和密码不能为空');
+      if (password.length < 6) throw new Error('密码至少6位');
+      const res = await umApi('/api/um/user', { method: 'POST', body: JSON.stringify({ username, password, nickname, email }) });
+      if (res.code !== 0) throw new Error(res.msg || '创建失败');
+      umShowToast('用户创建成功');
+      umLoadUsers();
+    });
+  }
+
+  function umShowEditUser(uid) {
+    umApi('/api/um/user/' + uid).then(r => {
+      if (r.code !== 0) { umShowToast(r.msg, 'error'); return; }
+      const u = r.data;
+      umOpenModal('编辑用户', `
+        <div class="um-form-group"><label>昵称</label><input id="um-edit-nickname" value="${u.nickname||''}"></div>
+        <div class="um-form-group"><label>邮箱</label><input id="um-edit-email" value="${u.email||''}"></div>
+        <div class="um-form-group"><label>新密码（留空不修改）</label><input type="password" id="um-edit-password" placeholder="至少6位"></div>
+        <div class="um-form-group"><label>状态</label><select id="um-edit-status"><option value="1" ${u.status===1?'selected':''}>启用</option><option value="0" ${u.status===0?'selected':''}>禁用</option></select></div>
+      `, async () => {
+        const body = { nickname: document.getElementById('um-edit-nickname').value.trim(), email: document.getElementById('um-edit-email').value.trim(), status: parseInt(document.getElementById('um-edit-status').value) };
+        const pw = document.getElementById('um-edit-password').value;
+        if (pw) { if (pw.length < 6) throw new Error('密码至少6位'); body.password = pw; }
+        const res = await umApi('/api/um/user/' + uid, { method: 'PUT', body: JSON.stringify(body) });
+        if (res.code !== 0) throw new Error(res.msg || '更新失败');
+        umShowToast('用户已更新');
+        umLoadUsers();
+      });
+    });
+  }
+
+  async function umShowAssignRoles(uid, username) {
+    const [userRes, rolesRes] = await Promise.all([
+      umApi('/api/um/user/' + uid + '/roles'),
+      umApi('/api/um/role/list')
+    ]);
+    const userRoles = (userRes.code === 0 && userRes.data) ? userRes.data.map(r => r.id) : [];
+    const allRoles = (rolesRes.code === 0 && rolesRes.data) ? rolesRes.data : [];
+    umOpenModal(`分配角色 - ${username}`, `
+      <div style="max-height:300px;overflow-y:auto;">
+        ${allRoles.map(r => `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
+          <input type="checkbox" value="${r.id}" class="um-role-check" ${userRoles.includes(r.id)?'checked':''}>
+          <span><strong>${r.role_name}</strong> (${r.role_code})</span>
+          <span style="color:var(--text-muted);font-size:12px;">${r.description||''}</span>
+        </label>`).join('')}
+      </div>
+    `, async () => {
+      const checked = [...document.querySelectorAll('.um-role-check:checked')].map(c => parseInt(c.value));
+      const res = await umApi('/api/um/user/' + uid + '/roles', { method: 'PUT', body: JSON.stringify({ role_ids: checked }) });
+      if (res.code !== 0) throw new Error(res.msg || '分配失败');
+      umShowToast('角色已更新');
+      umLoadUsers();
+    });
+  }
+
+  async function umDeleteUser(uid, username) {
+    if (!confirm(`确定删除用户 "${username}" 吗？此操作不可撤销。`)) return;
+    const res = await umApi('/api/um/user/' + uid, { method: 'DELETE' });
+    if (res.code !== 0) { umShowToast(res.msg || '删除失败', 'error'); return; }
+    umShowToast('用户已删除');
+    umLoadUsers();
+  }
+
+  // ── 角色管理 ──
+  async function umLoadRoles() {
+    const area = document.getElementById('um-content-area');
+    area.innerHTML = '<div class="um-empty">加载中...</div>';
+    try {
+      const res = await umApi('/api/um/role/list');
+      const roles = (res.code === 0 && res.data) ? res.data : [];
+      area.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:16px;">角色列表 (${roles.length})</h3>
+          <button class="um-btn um-btn-primary" onclick="umShowCreateRole()">+ 新建角色</button>
+        </div>
+        ${roles.length === 0 ? '<div class="um-empty">暂无角色</div>' : `
+        <table class="um-table"><thead><tr>
+          <th>ID</th><th>角色编码</th><th>角色名称</th><th>描述</th><th>操作</th>
+        </tr></thead><tbody>
+        ${roles.map(r => `<tr>
+          <td>${r.id}</td><td><code>${r.role_code}</code></td><td><strong>${r.role_name}</strong></td>
+          <td>${r.description||'-'}</td>
+          <td>
+            <button class="um-btn um-btn-sm um-btn-primary" onclick="umShowRolePerms(${r.id},'${r.role_name}')">权限配置</button>
+            <button class="um-btn um-btn-sm um-btn-danger" onclick="umDeleteRole(${r.id},'${r.role_name}')">删除</button>
+          </td>
+        </tr>`).join('')}
+        </tbody></table>`}`;
+    } catch(e) { area.innerHTML = '<div class="um-empty">加载失败: ' + e.message + '</div>'; }
+  }
+
+  function umShowCreateRole() {
+    umOpenModal('新建角色', `
+      <div class="um-form-group"><label>角色编码</label><input id="um-new-role-code" placeholder="如 operator"></div>
+      <div class="um-form-group"><label>角色名称</label><input id="um-new-role-name" placeholder="如 运维人员"></div>
+      <div class="um-form-group"><label>描述</label><input id="um-new-role-desc" placeholder="角色描述"></div>
+    `, async () => {
+      const role_code = document.getElementById('um-new-role-code').value.trim();
+      const role_name = document.getElementById('um-new-role-name').value.trim();
+      const description = document.getElementById('um-new-role-desc').value.trim();
+      if (!role_code || !role_name) throw new Error('角色编码和名称不能为空');
+      const res = await umApi('/api/um/role', { method: 'POST', body: JSON.stringify({ role_code, role_name, description }) });
+      if (res.code !== 0) throw new Error(res.msg || '创建失败');
+      umShowToast('角色创建成功');
+      umLoadRoles();
+    });
+  }
+
+  async function umShowRolePerms(rid, roleName) {
+    const [permRes, menuRes] = await Promise.all([
+      umApi('/api/um/role/' + rid + '/menu-perm'),
+      umApi('/api/um/menu/list')
+    ]);
+    const currentPerms = (permRes.code === 0 && permRes.data) ? permRes.data : [];
+    const menus = (menuRes.code === 0 && menuRes.data) ? menuRes.data : [];
+    const permMap = {};
+    currentPerms.forEach(p => { permMap[p.menu_id] = p.perm_level; });
+    umOpenModal(`权限配置 - ${roleName}`, `
+      <div style="max-height:400px;overflow-y:auto;">
+        <table class="um-table"><thead><tr><th>菜单</th><th>权限级别</th></tr></thead><tbody>
+        ${menus.map(m => {
+          const cur = permMap[m.id] || 0;
+          return `<tr>
+            <td>${m.menu_name} <span style="color:var(--text-muted);font-size:11px;">(${m.menu_code})</span></td>
+            <td><select class="um-perm-select" data-menu="${m.id}">
+              <option value="0" ${cur===0?'selected':''}>无权限</option>
+              <option value="1" ${cur===1?'selected':''}>只读</option>
+              <option value="2" ${cur===2?'selected':''}>读写</option>
+              <option value="3" ${cur===3?'selected':''}>修改</option>
+              <option value="4" ${cur===4?'selected':''}>管理</option>
+            </select></td>
+          </tr>`;
+        }).join('')}
+        </tbody></table>
+      </div>
+    `, async () => {
+      const perms = [...document.querySelectorAll('.um-perm-select')].map(s => ({
+        menu_id: parseInt(s.dataset.menu),
+        perm_id: parseInt(s.value)
+      })).filter(p => p.perm_id > 0);
+      const res = await umApi('/api/um/role/' + rid + '/menu-perm', { method: 'PUT', body: JSON.stringify({ menu_perms: perms }) });
+      if (res.code !== 0) throw new Error(res.msg || '配置失败');
+      umShowToast('权限配置已保存');
+      umLoadRoles();
+    });
+  }
+
+  async function umDeleteRole(rid, roleName) {
+    if (!confirm(`确定删除角色 "${roleName}" 吗？`)) return;
+    const res = await umApi('/api/um/role/' + rid, { method: 'DELETE' });
+    if (res.code !== 0) { umShowToast(res.msg || '删除失败', 'error'); return; }
+    umShowToast('角色已删除');
+    umLoadRoles();
+  }
+
+  // ── 菜单权限（只读） ──
+  async function umLoadMenus() {
+    const area = document.getElementById('um-content-area');
+    area.innerHTML = '<div class="um-empty">加载中...</div>';
+    try {
+      const [menuRes, permRes] = await Promise.all([
+        umApi('/api/um/menu/list'),
+        umApi('/api/um/menu/permissions')
+      ]);
+      const menus = (menuRes.code === 0 && menuRes.data) ? menuRes.data : [];
+      const perms = (permRes.code === 0 && permRes.data) ? permRes.data : [];
+      area.innerHTML = `
+        <h3 style="margin:0 0 16px;font-size:16px;">菜单权限定义</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            <h4 style="font-size:14px;margin:0 0 8px;">菜单列表 (${menus.length})</h4>
+            <table class="um-table"><thead><tr><th>编码</th><th>名称</th><th>排序</th></tr></thead><tbody>
+            ${menus.map(m => `<tr><td><code>${m.menu_code}</code></td><td>${m.menu_name}</td><td>${m.sort_order}</td></tr>`).join('')}
+            </tbody></table>
+          </div>
+          <div>
+            <h4 style="font-size:14px;margin:0 0 8px;">权限级别定义</h4>
+            <table class="um-table"><thead><tr><th>级别</th><th>编码</th><th>名称</th></tr></thead><tbody>
+            ${perms.map(p => `<tr><td>L${p.perm_level}</td><td><code>${p.perm_code}</code></td><td>${p.perm_name}</td></tr>`).join('')}
+            </tbody></table>
+          </div>
+        </div>`;
+    } catch(e) { area.innerHTML = '<div class="um-empty">加载失败: ' + e.message + '</div>'; }
   }
   </script>
 </div><!-- .app-layout -->

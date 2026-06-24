@@ -195,16 +195,38 @@ def register_auth_routes(app):
 
     @app.route('/api/auth/status', methods=['GET'])
     def auth_status():
-        """检查登录状态（永远返回200，不触发401）"""
+        """检查登录状态（永远返回200，不触发401）
+        当 auth_source 为 rbac 时，实时从 RBAC 数据库同步角色权限"""
         if not session.get('user_id'):
             return jsonify({'ok': True, 'logged_in': False})
+
+        role = session.get('role', '')
+        display_name = session.get('display_name', '')
+        username = session.get('username', '')
+
+        # RBAC 用户：实时同步角色信息
+        if session.get('auth_source') == 'rbac':
+            try:
+                from user_management.services.user_service import UserService
+                us = UserService()
+                rbac_user = us.get_user(int(session['user_id']))
+                if rbac_user:
+                    roles = [r['role_code'] for r in rbac_user.get('roles', [])]
+                    new_role = 'admin' if 'admin' in roles else (roles[0] if roles else 'user')
+                    if new_role != session.get('role'):
+                        session['role'] = new_role
+                        role = new_role
+                    display_name = rbac_user.get('nickname') or username
+            except Exception:
+                pass
+
         return jsonify({
             'ok': True, 'logged_in': True,
             'user': {
                 'id': session['user_id'],
-                'username': session.get('username', ''),
-                'display_name': session.get('display_name', ''),
-                'role': session.get('role', ''),
+                'username': username,
+                'display_name': display_name,
+                'role': role,
             }
         })
 
@@ -213,6 +235,30 @@ def register_auth_routes(app):
         if not session.get('user_id'):
             return jsonify({'ok': False, 'error': '未登录'}), 401
 
+        # RBAC 用户：从 RBAC 数据库查询
+        if session.get('auth_source') == 'rbac':
+            try:
+                from user_management.services.user_service import UserService
+                us = UserService()
+                rbac_user = us.get_user(int(session['user_id']))
+                if rbac_user:
+                    roles = [r['role_code'] for r in rbac_user.get('roles', [])]
+                    return jsonify({
+                        'ok': True,
+                        'user': {
+                            'id': rbac_user['id'],
+                            'username': rbac_user['username'],
+                            'display_name': rbac_user.get('nickname') or rbac_user['username'],
+                            'email': rbac_user.get('email') or '',
+                            'role': 'admin' if 'admin' in roles else (roles[0] if roles else 'user'),
+                            'roles': roles,
+                            'created_at': rbac_user.get('created_at', ''),
+                        }
+                    })
+            except Exception:
+                pass
+
+        # Legacy 用户
         conn = _get_db()
         try:
             user = conn.execute('SELECT * FROM users WHERE id=?', (session['user_id'],)).fetchone()

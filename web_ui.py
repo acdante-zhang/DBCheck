@@ -3575,7 +3575,7 @@ def api_health_monitor_status():
 
 @app.route('/api/health-monitor/start', methods=['POST'])
 def api_health_monitor_start():
-    """启动健康监控"""
+    """启动健康监控（如已运行则更新数据源列表）"""
     try:
         from health_monitor_engine import get_health_monitor_engine
         body = request.get_json() or {}
@@ -3585,8 +3585,12 @@ def api_health_monitor_start():
         if interval:
             engine.set_interval(interval)
         engine.set_instance_ids(instance_ids)
-        engine.start()
-        return jsonify({'ok': True, 'msg': '监控已启动'})
+        if not engine.is_running:
+            engine.start()
+        else:
+            # 已在运行，触发一次立即采集
+            engine.trigger_collect()
+        return jsonify({'ok': True, 'msg': '监控已启动', 'running': True})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -4317,8 +4321,252 @@ def api_pro_import_instances():
 
 
 # ══════════════════════════════════════════════════════════════
+#  数据看板（Dashboard）API
+# ══════════════════════════════════════════════════════════════
+
+import json as _json
+import os as _os
+
+_DASHBOARD_DB_DIR = os.path.join(BASE_DIR, 'pro_data')
+_DASHBOARD_DB_PATH = os.path.join(_DASHBOARD_DB_DIR, 'dashboard.db')
+
+
+def _get_dashboard_db():
+    import sqlite3
+    os.makedirs(_DASHBOARD_DB_DIR, exist_ok=True)
+    conn = sqlite3.connect(_DASHBOARD_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute('''CREATE TABLE IF NOT EXISTS dashboard_config (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT '默认看板',
+        cards_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )''')
+    conn.commit()
+    return conn
+
+
+@app.route('/api/dashboard/configs', methods=['GET'])
+def api_dashboard_configs():
+    """获取所有看板配置"""
+    try:
+        conn = _get_dashboard_db()
+        configs = conn.execute(
+            'SELECT * FROM dashboard_config ORDER BY updated_at DESC'
+        ).fetchall()
+        conn.close()
+        result = []
+        for c in configs:
+            result.append({
+                'id': c['id'],
+                'name': c['name'],
+                'cards': _json.loads(c['cards_json']),
+                'created_at': c['created_at'],
+                'updated_at': c['updated_at'],
+            })
+        return jsonify({'ok': True, 'configs': result})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/dashboard/configs', methods=['POST'])
+def api_dashboard_config_save():
+    """创建或更新看板配置"""
+    try:
+        data = request.get_json() or {}
+        config_id = data.get('id', '')
+        name = data.get('name', '默认看板')
+        cards = data.get('cards', [])
+        now = datetime.datetime.now().isoformat()
+
+        conn = _get_dashboard_db()
+        if config_id:
+            # 更新
+            existing = conn.execute(
+                'SELECT id FROM dashboard_config WHERE id=?', (config_id,)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    'UPDATE dashboard_config SET name=?, cards_json=?, updated_at=? WHERE id=?',
+                    (name, _json.dumps(cards), now, config_id)
+                )
+            else:
+                conn.execute(
+                    'INSERT INTO dashboard_config (id, name, cards_json, created_at, updated_at) VALUES (?,?,?,?,?)',
+                    (config_id, name, _json.dumps(cards), now, now)
+                )
+        else:
+            # 新建
+            import uuid
+            config_id = str(uuid.uuid4())[:12]
+            conn.execute(
+                'INSERT INTO dashboard_config (id, name, cards_json, created_at, updated_at) VALUES (?,?,?,?,?)',
+                (config_id, name, _json.dumps(cards), now, now)
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True, 'id': config_id, 'msg': '保存成功'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/dashboard/configs/<config_id>', methods=['DELETE'])
+def api_dashboard_config_delete(config_id):
+    """删除看板配置"""
+    try:
+        conn = _get_dashboard_db()
+        conn.execute('DELETE FROM dashboard_config WHERE id=?', (config_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True, 'msg': '已删除'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/dashboard/data', methods=['POST'])
+def api_dashboard_data():
+    """获取看板实时数据（支持多数据源并发查询）"""
+    try:
+        data = request.get_json() or {}
+        cards = data.get('cards', [])
+        if not cards:
+            return jsonify({'ok': True, 'cards': []})
+
+        import concurrent.futures
+        from health_monitor_engine import get_health_monitor_engine
+        from health_monitor_queries import DB_HEALTH_SQL_MAP, DB_SUPPORTED_CARDS
+        from pro.instance_manager import get_instance_manager
+
+        engine = get_health_monitor_engine()
+        im = get_instance_manager()
+
+        def query_card(card):
+            card_id = card.get('id', '')
+            card_type = card.get('type', 'metric')
+            ds_id = card.get('datasource_id', '')
+            title = card.get('title', '')
+            # 自定义SQL卡片
+            if card_type == 'custom_sql':
+                custom_sql = card.get('custom_sql', '').strip()
+                if not custom_sql:
+                    return {'id': card_id, 'type': card_type, 'title': title, 'error': 'SQL为空'}
+                result = engine.execute_custom_sql(ds_id, custom_sql)
+                if result.get('ok'):
+                    return {
+                        'id': card_id, 'type': card_type, 'title': title,
+                        'datasource_id': ds_id,
+                        'columns': result.get('columns', []),
+                        'rows': result.get('rows', []),
+                        'row_count': result.get('row_count', 0),
+                    }
+                return {'id': card_id, 'type': card_type, 'title': title, 'error': result.get('error', '未知错误')}
+
+            # 预设监控项卡片
+            monitor_item = card.get('monitor_item', '')
+            if not ds_id or not monitor_item:
+                return {'id': card_id, 'type': card_type, 'title': title, 'error': '缺少数据源或监控项'}
+
+            # 获取实例信息
+            inst = im.get_instance(ds_id, mask_password=False)
+            if not inst:
+                return {'id': card_id, 'type': card_type, 'title': title, 'error': '数据源不存在'}
+            db_type = inst.get('db_type', '').lower()
+            ds_label = inst.get('name', f"{inst.get('host')}:{inst.get('port')}")
+
+            # 查询
+            try:
+                rows = engine.execute_custom_sql(ds_id,
+                    DB_HEALTH_SQL_MAP.get(db_type, {}).get(monitor_item, '')
+                )
+                if rows.get('ok'):
+                    return {
+                        'id': card_id, 'type': card_type, 'title': title,
+                        'datasource_id': ds_id, 'datasource_label': ds_label,
+                        'db_type': db_type, 'monitor_item': monitor_item,
+                        'columns': rows.get('columns', []),
+                        'rows': rows.get('rows', []),
+                        'row_count': rows.get('row_count', 0),
+                    }
+                return {'id': card_id, 'type': card_type, 'title': title, 'error': rows.get('error', '查询失败')}
+            except Exception as e:
+                return {'id': card_id, 'type': card_type, 'title': title, 'error': str(e)}
+
+        # 并发查询所有卡片
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(cards), 10)) as executor:
+            futures = {executor.submit(query_card, c): c for c in cards}
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    results.append(future.result(timeout=30))
+                except Exception as e:
+                    card = futures[future]
+                    results.append({'id': card.get('id', ''), 'error': str(e)})
+
+        # 按原始顺序排列
+        id_order = {c.get('id', ''): i for i, c in enumerate(cards)}
+        results.sort(key=lambda r: id_order.get(r.get('id', ''), 999))
+
+        return jsonify({'ok': True, 'cards': results})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/dashboard/execute-sql', methods=['POST'])
+def api_dashboard_execute_sql():
+    """执行自定义SQL查询"""
+    try:
+        data = request.get_json() or {}
+        instance_id = data.get('instance_id', '')
+        sql = data.get('sql', '').strip()
+        if not instance_id or not sql:
+            return jsonify({'ok': False, 'error': '缺少数据源ID或SQL'})
+
+        from health_monitor_engine import get_health_monitor_engine
+        engine = get_health_monitor_engine()
+        result = engine.execute_custom_sql(instance_id, sql)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/dashboard/health-items', methods=['GET'])
+def api_dashboard_health_items():
+    """获取可用的健康监控项列表"""
+    from health_monitor_queries import DB_HEALTH_SQL_MAP, DB_SUPPORTED_CARDS, CARD_DISPLAY_CONFIG
+    items = {}
+    for db_type, cards in DB_SUPPORTED_CARDS.items():
+        items[db_type] = []
+        for card_key in cards:
+            cfg = CARD_DISPLAY_CONFIG.get(card_key, {})
+            items[db_type].append({
+                'key': card_key,
+                'title': cfg.get('title', card_key),
+                'icon': cfg.get('icon', '📋'),
+                'size': cfg.get('size', 'medium'),
+            })
+    return jsonify({'ok': True, 'items': items})
+
+
+# ══════════════════════════════════════════════════════════════
 #  Pro 数据源管理 API
 # ══════════════════════════════════════════════════════════════
+
+def _notify_health_engine_refresh():
+    """数据源变更后通知健康监控引擎刷新列表"""
+    try:
+        from health_monitor_engine import get_health_monitor_engine
+        engine = get_health_monitor_engine()
+        from pro import get_instance_manager
+        im = get_instance_manager()
+        instances = im.get_all_instances(mask_password=False)
+        enabled_ids = [str(i['id']) for i in instances if i.get('enabled', True)]
+        if engine.is_running:
+            engine.set_instance_ids(enabled_ids)
+            engine.trigger_collect()
+    except Exception:
+        pass
 
 @app.route('/api/pro/datasources', methods=['GET'])
 def api_pro_datasources():
@@ -4427,6 +4675,8 @@ def api_pro_datasource_add():
         )
         im = get_instance_manager()
         result = im.add_instance(inst)
+        # 通知健康监控引擎刷新数据源列表
+        _notify_health_engine_refresh()
         return jsonify(result)
     except ImportError as e:
         import traceback
@@ -4446,6 +4696,8 @@ def api_pro_datasource_update(instance_id):
         data = request.get_json()
         im = get_instance_manager()
         result = im.update_instance(instance_id, data)
+        # 通知健康监控引擎刷新
+        _notify_health_engine_refresh()
         return jsonify(result)
     except ImportError as e:
         import traceback
@@ -4483,6 +4735,8 @@ def api_pro_datasource_delete(instance_id):
                         hm.delete_instance(i.get('key', ''))
             except Exception as e:
                 print('清理 history.db 失败: ' + str(e))
+        # 通知健康监控引擎刷��
+        _notify_health_engine_refresh()
         return jsonify(result)
     except ImportError as e:
         import traceback
