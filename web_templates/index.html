@@ -6768,8 +6768,8 @@ function showPage(name) {
     // 切回 sql-editor 页面时刷新 CodeMirror 尺寸
     setTimeout(function() { if (window.sqlEditor) window.sqlEditor.refresh(); }, 150);
   }
-  if (name === 'monitor-slow') loadMonitorSlow();
-  if (name === 'monitor-conn') loadMonitorConn();
+  if (name === 'monitor-slow') { loadMonitorSlow(); ensureMonitorStarted(); }
+  if (name === 'monitor-conn') { loadMonitorConn(); ensureMonitorStarted(); }
   if (name === 'health-monitor') hmInitPage();
   if (name === 'dashboard') dbInitPage();
   if (name === 'um-admin') loadUmAdmin();
@@ -7099,7 +7099,8 @@ async function loadDatasourcesForSelect() {
       const filterType = (dbType && dbType !== 'oracle') ? dbType.toLowerCase() : null;
       let hasMatch = false;
       data.datasources.forEach(ds => {
-        if (!filterType || (ds.db_type && ds.db_type.toLowerCase() === filterType)) {
+        var dsType = (ds.db_type || '').toLowerCase().replace('oracle_full', 'oracle');
+        if (!filterType || dsType === filterType) {
           hasMatch = true;
           const opt = document.createElement('option');
           opt.value = ds.id;
@@ -13920,9 +13921,11 @@ async function deleteBackupHistory(recordId) {
   let monitorConnData = [];
   let monitorHistData = [];
   let monitorPollTimer = null;
+  let _monitorRunning = false;
 
   // ─── 通用监控状态更新 ───────────────────────────────────
   function updateMonitorStatus(status) {
+    _monitorRunning = (status === 'running');
     var startBtns = [
       document.getElementById('monitor-start-btn'),
       document.getElementById('monitor-start-btn-conn')
@@ -13952,6 +13955,19 @@ async function deleteBackupHistory(recordId) {
   }
 
   // ─── 启动 / 停止 / 间隔 ───────────────────────────────────
+  let _monitorAutoStarted = false;
+  async function ensureMonitorStarted() {
+    if (_monitorAutoStarted) return;
+    _monitorAutoStarted = true;
+    try {
+      const res = await fetch('/api/monitor/slow-queries');
+      const data = await res.json();
+      if (data.ok && data.status && !data.status.running) {
+        await startMonitor();
+      }
+    } catch(e) { console.log('ensureMonitorStarted:', e.message); }
+  }
+
   async function startMonitor() {
     try {
       const res = await fetch('/api/monitor/config', {
@@ -14171,7 +14187,8 @@ async function deleteBackupHistory(recordId) {
     data.sort(function(a, b) { return (parseFloat(b[sortKey]) || 0) - (parseFloat(a[sortKey]) || 0); });
 
     if (data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px">当前未发现慢查询，系统运行良好</td></tr>';
+      var hint = _monitorRunning ? '当前未发现慢查询，系统运行良好' : '监控未启动，请点击"启动"按钮开始采集';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px">' + hint + '</td></tr>';
       return;
     }
 
@@ -14328,7 +14345,8 @@ async function deleteBackupHistory(recordId) {
   function renderMonitorConnBars() {
     var container = document.getElementById('mon-conn-bars');
     if (monitorConnData.length === 0) {
-      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无连接数据</div>';
+      var connHint = _monitorRunning ? '暂无连接数据' : '监控未启动，请点击"启动"按钮开始采集';
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">' + connHint + '</div>';
       return;
     }
     // 按使用率排序
@@ -17143,6 +17161,11 @@ function mkdirRemote() {
         });
         // 自动启动健康监控引擎（传入所有启用的数据源ID）
         hmAutoStartEngine(d.datasources);
+        // 自动选中第一个数据源并加载数据
+        if (d.datasources.length > 0) {
+          sel.value = d.datasources[0].id;
+          await hmSwitchDS();
+        }
       }
       if (d.datasources && d.datasources.length === 0) {
         document.getElementById('hm-empty').style.display = 'block';
@@ -17197,7 +17220,17 @@ function mkdirRemote() {
   }
 
   async function hmRefresh() {
-    if (_hmCurrentDS) await hmLoadData(_hmCurrentDS);
+    if (!_hmCurrentDS) {
+      const sel = document.getElementById('hm-ds-select');
+      if (sel && sel.options.length > 1) {
+        sel.selectedIndex = 1;
+        await hmSwitchDS();
+      } else {
+        toastError('请先选择数据源');
+      }
+      return;
+    }
+    await hmLoadData(_hmCurrentDS);
   }
 
   async function hmLoadData(instanceId) {
@@ -17205,11 +17238,19 @@ function mkdirRemote() {
       const r = await fetch('/api/health-monitor/data/' + instanceId);
       const d = await r.json();
       if (d.ok && d.instance) {
-        hmRenderCards(d.instance);
-        document.getElementById('hm-update-time').textContent =
-          '更新: ' + new Date((d.instance.ts||0)*1000).toLocaleTimeString();
+        if (d.instance.error) {
+          hmShowError(d.instance.error);
+          document.getElementById('hm-update-time').textContent =
+            '更新: ' + new Date((d.instance.ts||0)*1000).toLocaleTimeString();
+        } else {
+          hmRenderCards(d.instance);
+          document.getElementById('hm-update-time').textContent =
+            '更新: ' + new Date((d.instance.ts||0)*1000).toLocaleTimeString();
+        }
       } else if (d.instance && d.instance.error) {
         hmShowError(d.instance.error);
+      } else {
+        hmShowError('暂无监控数据，请稍后刷新');
       }
     } catch(e) {
       hmShowError('请求失败: ' + e.message);

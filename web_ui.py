@@ -3568,7 +3568,7 @@ def api_health_monitor_status():
     try:
         from health_monitor_engine import get_health_monitor_engine
         engine = get_health_monitor_engine()
-        return jsonify({'ok': True, 'data': engine.get_status()})
+        return jsonify({'ok': True, 'status': engine.get_status()})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -3665,7 +3665,7 @@ def api_health_monitor_schema_users(instance_id):
         from pro.instance_manager import get_instance_manager
         from health_monitor_queries import ORACLE_HEALTH_SQL
         im = get_instance_manager()
-        inst = im.get_instance_decrypted(int(instance_id))
+        inst = im.get_instance_decrypted(str(instance_id))
         if not inst:
             return jsonify({'ok': False, 'error': '实例不存在'}), 404
 

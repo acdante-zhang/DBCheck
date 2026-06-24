@@ -137,7 +137,7 @@ class HealthMonitorEngine:
         from pro.instance_manager import get_instance_manager
         im = get_instance_manager()
         try:
-            inst = im.get_instance_decrypted(int(instance_id))
+            inst = im.get_instance_decrypted(str(instance_id))
         except Exception:
             inst = None
         if not inst:
@@ -274,7 +274,7 @@ class HealthMonitorEngine:
         from pro.instance_manager import get_instance_manager
         im = get_instance_manager()
         try:
-            inst = im.get_instance_decrypted(int(instance_id))
+            inst = im.get_instance_decrypted(str(instance_id))
         except Exception:
             inst = None
         if not inst:
