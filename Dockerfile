@@ -53,7 +53,7 @@ RUN /opt/venv/bin/pip install --no-cache-dir dmpython>=1.0.0 \
 # Download and extract drivers.zip from GitHub Releases (non-fatal)
 # Provides: Oracle client libs, YashanDB wheel, etc.
 # If download fails, related DB types will be disabled at runtime.
-RUN curl -fSL "https://github.com/fiyo/Acdante DB Inspector/releases/download/drivers/drivers.zip" \
+RUN curl -fSL "https://github.com/fiyo/DBCheck/releases/download/drivers/drivers.zip" \
     -o /tmp/drivers.zip \
     && unzip -o /tmp/drivers.zip -d /build/ \
     && rm -f /tmp/drivers.zip \
