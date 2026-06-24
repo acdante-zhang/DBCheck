@@ -1,15 +1,15 @@
-# DBCheck v2.5.3 - Full Edition Dockerfile
+# Acdante DB Inspector v2.6.1 - Full Edition Dockerfile (with RBAC User Management)
 # Supports: MySQL, TiDB, PostgreSQL, IvorySQL, Oracle, SQL Server, DM8, YashanDB
 #
 # Build:
-#   docker build -t jackge12345/dbcheck:v2.5.3 .
-#   docker build -t jackge12345/dbcheck:latest .
+#   docker build -t acdante/db-inspector:latest .
 #
 # Run:
 #   docker run -d -p 5003:5003 \
-#     -v dbcheck_data:/app/data \
-#     -v dbcheck_reports:/app/reports \
-#     jackge12345/dbcheck:v2.5.3
+#     -v acdante_data:/app/data \
+#     -v acdante_pro_data:/app/pro_data \
+#     -v acdante_reports:/app/reports \
+#     acdante/db-inspector:latest
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Builder Stage: install Python deps & copy app code
@@ -53,7 +53,7 @@ RUN /opt/venv/bin/pip install --no-cache-dir dmpython>=1.0.0 \
 # Download and extract drivers.zip from GitHub Releases (non-fatal)
 # Provides: Oracle client libs, YashanDB wheel, etc.
 # If download fails, related DB types will be disabled at runtime.
-RUN curl -fSL "https://github.com/fiyo/DBCheck/releases/download/drivers/drivers.zip" \
+RUN curl -fSL "https://github.com/fiyo/Acdante DB Inspector/releases/download/drivers/drivers.zip" \
     -o /tmp/drivers.zip \
     && unzip -o /tmp/drivers.zip -d /build/ \
     && rm -f /tmp/drivers.zip \
@@ -108,7 +108,10 @@ ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
 # Create VERSION.txt (without v prefix, matches Docker tag format)
-RUN echo 2.6.1 > /app/VERSION.txt
+RUN echo 2.7.0 > /app/VERSION.txt
+
+# Ensure data and pro_data directories exist for volume mounts
+RUN mkdir -p /app/data /app/pro_data /app/reports
 
 EXPOSE 5003
 

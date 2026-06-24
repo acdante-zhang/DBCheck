@@ -1,31 +1,28 @@
 version: "3.8"
 
 services:
-  dbcheck:
+  acdante-db-inspector:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        # Set to 1 to include DM8 driver (requires drivers/dm8/ to exist)
-        WITH_DM: 0
-    image: jackge12345/dbcheck:2.5.4
-    container_name: dbcheck
+    image: acdante/db-inspector:latest
+    container_name: acdante-db-inspector
     restart: unless-stopped
     ports:
       - "5003:5003"
     volumes:
-      # Persist SQLite database and config
-      - dbcheck_data:/app/data
+      # Persist SQLite databases and config
+      - acdante_data:/app/data
+      # Persist pro_data (RBAC users.db, um_rbac.db)
+      - acdante_pro_data:/app/pro_data
       # Persist generated reports
-      - dbcheck_reports:/app/reports
-      # Mount drivers directory (read-only) for runtime driver installation
+      - acdante_reports:/app/reports
+      # Mount drivers directory (read-only)
       - ./drivers:/app/drivers:ro
     environment:
       - TZ=Asia/Shanghai
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
-      # Override config path if needed
-      # - DBCHECK_CONFIG=/app/data/config.json
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5003/api/v1/health"]
       interval: 30s
@@ -33,25 +30,13 @@ services:
       retries: 3
       start_period: 30s
     networks:
-      - dbcheck_net
-
-  # Optional: PostgreSQL for centralized result storage (future use)
-  # postgres:
-  #   image: postgres:16-alpine
-  #   environment:
-  #     POSTGRES_DB: dbcheck
-  #     POSTGRES_USER: dbcheck
-  #     POSTGRES_PASSWORD: changeme
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   networks:
-  #     - dbcheck_net
+      - acdante_net
 
 volumes:
-  dbcheck_data:
-  dbcheck_reports:
-  # postgres_data:
+  acdante_data:
+  acdante_pro_data:
+  acdante_reports:
 
 networks:
-  dbcheck_net:
+  acdante_net:
     driver: bridge

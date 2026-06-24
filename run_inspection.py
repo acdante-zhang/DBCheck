@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Copyright (c) 2025-2026 Acdante. All rights reserved.
 #
-# This file is part of DBCheck, an open-source database health inspection tool.
-# DBCheck is released under the MIT License with Attribution Requirements.
-# See LICENSE for full license text.
+# This file is part of Acdante DB Inspector, a private database health inspection tool.
+# Copyright (c) 2025-2026 Acdante. All rights reserved.
+# Proprietary and confidential. Unauthorized distribution prohibited.
 #
 
 """
@@ -113,7 +113,7 @@ def run_mysql(db_info, inspector_name, ssh_info=None):
     mod = importlib.util.module_from_spec(spec)
 
     class _FakeInfos:
-        label = db_info.get('label', 'DBCheck')
+        label = db_info.get('label', 'Acdante DB Inspector')
         sqltemplates = 'builtin'
         batch = False
     mod.infos = _FakeInfos()
@@ -172,7 +172,7 @@ def run_pg(db_info, inspector_name, ssh_info=None):
     mod = importlib.util.module_from_spec(spec)
 
     class _FakeInfos:
-        label = db_info.get('label', 'DBCheck')
+        label = db_info.get('label', 'Acdante DB Inspector')
         sqltemplates = 'builtin'
         batch = False
     mod.infos = _FakeInfos()
@@ -393,7 +393,7 @@ def run_tidb(db_info, inspector_name, ssh_info=None):
     mod = importlib.util.module_from_spec(spec)
 
     class _FakeInfos:
-        label = db_info.get('label', 'DBCheck')
+        label = db_info.get('label', 'Acdante DB Inspector')
         sqltemplates = 'builtin'
         batch = False
     mod.infos = _FakeInfos()
@@ -452,7 +452,7 @@ def run_ivorysql(db_info, inspector_name, ssh_info=None):
     mod = importlib.util.module_from_spec(spec)
 
     class _FakeInfos:
-        label = db_info.get('label', 'DBCheck')
+        label = db_info.get('label', 'Acdante DB Inspector')
         sqltemplates = 'builtin'
         batch = False
     mod.infos = _FakeInfos()
@@ -558,7 +558,7 @@ def run_gbase(db_info, inspector_name, ssh_info=None):
     mod = importlib.util.module_from_spec(spec)
 
     class _FakeInfos:
-        label = db_info.get('label', 'DBCheck')
+        label = db_info.get('label', 'Acdante DB Inspector')
         sqltemplates = 'builtin'
         batch = False
     mod.infos = _FakeInfos()
@@ -579,7 +579,7 @@ def run_gbase(db_info, inspector_name, ssh_info=None):
         print(f"[GBase] 连接失败: {ver}")
         sys.exit(1)
     inspector.collect_data()
-    inspector_name = inspector_name or 'DBCheck'
+    inspector_name = inspector_name or 'Acdante DB Inspector'
     template_id = db_info.get('template_id')
     if template_id:
         inspector.template_id = template_id

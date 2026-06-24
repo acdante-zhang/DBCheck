@@ -423,10 +423,10 @@ class TestLoginPage:
         """登录页面可访问"""
         res = client.get('/um/login')
         assert res.status_code == 200
-        assert b'DBCheck' in res.data
+        assert b'Acdante DB Inspector' in res.data
 
     def test_admin_page_accessible(self, client):
         """管理页面可访问（由前端控制权限）"""
         res = client.get('/um/admin')
         assert res.status_code == 200
-        assert b'DBCheck' in res.data
+        assert b'Acdante DB Inspector' in res.data

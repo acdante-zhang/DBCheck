@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Copyright (c) 2025-2026 Acdante. All rights reserved.
 #
-# This file is part of DBCheck, an open-source database health inspection tool.
-# DBCheck is released under the MIT License with Attribution Requirements.
-# See LICENSE for full license text.
+# This file is part of Acdante DB Inspector, a private database health inspection tool.
+# Copyright (c) 2025-2026 Acdante. All rights reserved.
+# Proprietary and confidential. Unauthorized distribution prohibited.
 #
 """DBCheck 中文翻译数据"""
 
@@ -2442,7 +2442,7 @@ ZI = {
     "webui.si_hist_ops": "操作",
     "webui.btn_share_report": "📤 分享报告",
     # ── 登录页 ──
-    "webui.login_title": "DBCheck",
+    "webui.login_title": "Acdante DB Inspector",
     "webui.login_subtitle": "数据库智能巡检工具",
     "webui.login_username": "用户名",
     "webui.login_username_placeholder": "请输入用户名",

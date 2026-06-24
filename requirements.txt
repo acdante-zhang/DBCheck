@@ -1,4 +1,4 @@
-# DBCheck - Database Inspection Tool
+# Acdante DB Inspector - Database Inspection Tool
 # Install: pip install -r requirements.txt
 
 # ── Core ──────────────────────────────────────────────────────────────────────

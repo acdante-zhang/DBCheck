@@ -2665,7 +2665,7 @@ ZI = {
     "webui.si_hist_ops": "操作",
     "webui.btn_share_report": "📤 分享报告",
     # ── 登录页 ──
-    "webui.login_title": "DBCheck",
+    "webui.login_title": "Acdante DB Inspector",
     "webui.login_subtitle": "数据库智能巡检工具",
     "webui.login_username": "用户名",
     "webui.login_username_placeholder": "请输入用户名",

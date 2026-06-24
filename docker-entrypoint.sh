@@ -1,16 +1,18 @@
 #!/bin/bash
 # docker-entrypoint.sh
-# DBCheck Docker 容器启动脚本
+# Acdante DB Inspector Docker 容器启动脚本
 
 set -e
 
-echo "==> DBCheck v$(cat /app/VERSION.txt 2>/dev/null || echo 'unknown')"
+echo "==> Acdante DB Inspector v$(cat /app/VERSION.txt 2>/dev/null || echo 'unknown')"
 
 # Ensure data/ and drivers/ directories exist and are writable
 mkdir -p /app/data
 chmod 755 /app/data
 mkdir -p /app/drivers
 chmod 755 /app/drivers
+mkdir -p /app/pro_data
+chmod 755 /app/pro_data
 
 # Initialize database tables (create if not exist)
 # This ensures inspection_template and other tables exist even on first run
@@ -36,5 +38,9 @@ else
     echo "==> Drivers found: $DRIVER_COUNT file(s) in /app/drivers/"
 fi
 
-echo "==> Starting DBCheck Web UI on port 5003..."
+# Initialize RBAC user management seed data
+echo "==> Initializing RBAC user management..."
+python -m user_management.seed 2>&1 || echo "WARNING: RBAC seed init failed"
+
+echo "==> Starting Acdante DB Inspector Web UI on port 5003..."
 exec python /app/web_ui.py

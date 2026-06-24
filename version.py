@@ -1,14 +1,13 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 #
-# Copyright (c) 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Copyright (c) 2025-2026 Acdante. All rights reserved.
 #
-# This file is part of DBCheck, an open-source database health inspection tool.
-# DBCheck is released under the MIT License with Attribution Requirements.
-# See LICENSE for full license text.
+# This file is part of Acdante DB Inspector, a private database health inspection tool.
+# Copyright (c) 2025-2026 Acdante. All rights reserved.
+# Proprietary and confidential. Unauthorized distribution prohibited.
 #
 """
-DBCheck 鐗堟湰淇℃伅 (渚涢潤鎬佺綉绔欒鍙?
-杩欎釜鏂囦欢浼氳杞崲涓?version.json 渚?docs/index.html 浣跨敤
+DBCheck 版本信息
 """
 
-__version__ = "v2.6.2"
+__version__ = "v2.7.0-acdante"

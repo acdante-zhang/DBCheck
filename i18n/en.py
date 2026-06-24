@@ -2640,7 +2640,7 @@ EN = {
     "webui.si_hist_ops": "Actions",
     "webui.btn_share_report": "📤 Share Report",
     # ── Login Page ──
-    "webui.login_title": "DBCheck",
+    "webui.login_title": "Acdante DB Inspector",
     "webui.login_subtitle": "Database Intelligent Inspection Tool",
     "webui.login_username": "Username",
     "webui.login_username_placeholder": "Enter username",

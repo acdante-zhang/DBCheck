@@ -1,10 +1,10 @@
 # coding: utf-8
 #
-# Copyright (c) 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Copyright (c) 2025-2026 Acdante. All rights reserved.
 #
-# This file is part of DBCheck, an open-source database health inspection tool.
-# DBCheck is released under the MIT License with Attribution Requirements.
-# See LICENSE for full license text.
+# This file is part of Acdante DB Inspector, a private database health inspection tool.
+# Copyright (c) 2025-2026 Acdante. All rights reserved.
+# Proprietary and confidential. Unauthorized distribution prohibited.
 #
 
 """
@@ -280,7 +280,7 @@ class SchedulerManager:
                 func=self._job_func,
                 trigger=trigger,
                 job_id=job_id,
-                args=[job_id, config['db_info'], config.get('inspector_name', 'DBCheck'),
+                args=[job_id, config['db_info'], config.get('inspector_name', 'Acdante DB Inspector'),
                       config.get('notify_on_done', True)],
                 name=config.get('name', job_id),
                 replace_existing=True
@@ -399,7 +399,7 @@ class SchedulerManager:
                 self._job_func(
                     job_id,
                     job_cfg['db_info'],
-                    job_cfg.get('inspector_name', 'DBCheck'),
+                    job_cfg.get('inspector_name', 'Acdante DB Inspector'),
                     job_cfg.get('notify_on_done', True)
                 )
                 return True

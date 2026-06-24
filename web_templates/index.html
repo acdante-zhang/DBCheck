@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>DBCheck · Database Inspector</title>
+<title>Acdante DB Inspector · Database Inspector</title>
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <style>
 /* ─── Reset & Base ─── */
@@ -388,7 +388,7 @@ async function executeFixSql(taskId, sql) {
   height: 32px;
   margin-bottom: 0;
 }
-/* 折叠态在 logo 下竖排显示 DBCheck - 通过 HTML 实现 */
+/* 折叠态在 logo 下竖排显示 Acdante DB Inspector - 通过 HTML 实现 */
 .sidebar.collapsed .sidebar-logo {
   padding: 16px 8px 12px;
   text-align: center;
@@ -2668,7 +2668,7 @@ async function executeFixSql(taskId, sql) {
 <!-- 水印 + 水波效果 -->
 <script>
 (function(){
-var phrases = ['DBCheck', 'MySQL', 'PostgreSQL', 'Oracle', 'DM'];
+var phrases = ['Acdante DB Inspector', 'MySQL', 'PostgreSQL', 'Oracle', 'DM'];
   var el = document.createElement('div');
   el.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:1;overflow:hidden';
   document.body.appendChild(el);
@@ -3993,9 +3993,9 @@ function formatBytes(bytes) {
   <!-- ─── Sidebar ─── -->
   <aside class="sidebar">
     <div class="sidebar-logo">
-      <img src="/dbcheck_logo.png" alt="DBCheck" style="width:40px;height:40px;margin-bottom:10px;">
-      <span class="sidebar-vertical-text">DBCheck</span>
-      <h1>DBCheck <span class="edition-badge community" id="sidebar-edition-badge" data-i18n="webui.edition_badge">社区版</span></h1>
+      <img src="/acdante-db-inspector-logo.png" alt="Acdante DB Inspector" style="width:40px;height:40px;margin-bottom:10px;">
+      <span class="sidebar-vertical-text">Acdante DB Inspector</span>
+      <h1>Acdante DB Inspector <span class="edition-badge community" id="sidebar-edition-badge" data-i18n="webui.edition_badge">社区版</span></h1>
       <p data-i18n="webui.logo_subtitle">基于 AI 的智能数据库巡检工具</p>
     </div>
 
@@ -4099,12 +4099,12 @@ function formatBytes(bytes) {
       <span class="icon">📦</span> <span data-i18n="webui.nav_data_management">数据管理</span>
     </div>
     <div class="nav-item" onclick="showAboutModal()" id="nav-about">
-      <span class="icon">💡</span> <span data-i18n="webui.nav_about">关于 DBCheck</span>
+      <span class="icon">💡</span> <span data-i18n="webui.nav_about">关于 Acdante DB Inspector</span>
     </div>
 
     </div><!-- /sidebar-nav -->
 
-    <div class="sidebar-footer">
+    <div class="sidebar-footer" style="display:none">
       <button class="sidebar-toggle" onclick="toggleSidebar()" title="折叠/展开菜单" id="sidebar-toggle-btn">«</button>
       <span class="version-badge" id="version-badge">{{ version }}</span>
     </div>
@@ -4114,7 +4114,7 @@ function formatBytes(bytes) {
   <div class="main">
     <div class="topbar">
       <span class="topbar-title" id="topbar-title">首页</span>
-      <span class="topbar-sub" id="topbar-sub">欢迎使用 DBCheck 数据库巡检工具</span>
+      <span class="topbar-sub" id="topbar-sub">欢迎使用 Acdante DB Inspector 数据库巡检工具</span>
       <button class="btn btn-ghost" id="lang-toggle" onclick="toggleLang()" style="margin-left:auto;font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer;">
         🌐 <span id="lang-label">EN</span>
       </button>
@@ -4142,7 +4142,7 @@ function formatBytes(bytes) {
             <div class="slogan-glow"></div>
             <div class="slogan-text" id="slogan-text"></div>
           </div>
-          <div class="slogan-sub" id="slogan-sub">DBCheck · Database Inspector</div>
+          <div class="slogan-sub" id="slogan-sub">Acdante DB Inspector · Database Inspector</div>
         </div>
 
 
@@ -4363,7 +4363,7 @@ function formatBytes(bytes) {
           <div class="type-grid">
             <div class="type-card selected" id="tc-oracle" onclick="selectDbType('oracle')">
               <div class="tc-header">
-                <div class="tc-logo"><img src="/oracle.png" alt="DBCheck" style="height:36px;width:auto;"></div>
+                <div class="tc-logo"><img src="/oracle.png" alt="Acdante DB Inspector" style="height:36px;width:auto;"></div>
                 <div class="tc-check" id="chk-oracle">✓</div>
               </div>
               <div class="tc-name" data-i18n="webui.db_oracle_name">Oracle</div>
@@ -4387,7 +4387,7 @@ function formatBytes(bytes) {
             </div>
             <div class="type-card" id="tc-sqlserver" onclick="selectDbType('sqlserver')">
               <div class="tc-header">
-                <div class="tc-logo"><img src="/sqlserver.png" alt="DBCheck" style="height:36px;width:auto;"></div>
+                <div class="tc-logo"><img src="/sqlserver.png" alt="Acdante DB Inspector" style="height:36px;width:auto;"></div>
                 <div class="tc-check" id="chk-sqlserver"></div>
               </div>
               <div class="tc-name-row"><span data-i18n="webui.db_sqlserver_name">SQL Server</span></div>
@@ -4395,7 +4395,7 @@ function formatBytes(bytes) {
             </div>
             <div class="type-card" id="tc-dm" onclick="selectDbType('dm')">
               <div class="tc-header">
-                <div class="tc-logo"><img src="/dm.png" alt="DBCheck" style="height:36px;width:auto;"></div>
+                <div class="tc-logo"><img src="/dm.png" alt="Acdante DB Inspector" style="height:36px;width:auto;"></div>
                 <div class="tc-check" id="chk-dm"></div>
               </div>
               <div class="tc-name" data-i18n="webui.db_dm_name">达梦 DM8</div>
@@ -4403,7 +4403,7 @@ function formatBytes(bytes) {
             </div>
             <div class="type-card" id="tc-tidb" onclick="selectDbType('tidb')">
               <div class="tc-header">
-                <div class="tc-logo"><img src="/tidb.png" alt="DBCheck" style="height:36px;width:auto;"></div>
+                <div class="tc-logo"><img src="/tidb.png" alt="Acdante DB Inspector" style="height:36px;width:auto;"></div>
                 <div class="tc-check" id="chk-tidb"></div>
               </div>
               <div class="tc-name-row"><span data-i18n="webui.db_tidb_name">TiDB</span></div>
@@ -5026,7 +5026,7 @@ function formatBytes(bytes) {
           <div class="form-grid" id="pro-license-form">
             <div class="field full">
               <label data-i18n="webui.license_key_label">许可证密钥</label>
-              <input type="text" id="pro-license-key" placeholder="DBCheck-Pro-XXXX-XXXX-XXXX" data-i18n-placeholder="webui.license_key_placeholder" />
+              <input type="text" id="pro-license-key" placeholder="Acdante DB Inspector-Pro-XXXX-XXXX-XXXX" data-i18n-placeholder="webui.license_key_placeholder" />
             </div>
           </div>
           <div class="btn-row" style="margin-top:16px;">
@@ -5052,7 +5052,7 @@ function formatBytes(bytes) {
         <div class="card">
           <div class="card-title"><span>🔐</span> API Key 管理</div>
           <div class="card-desc" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
-            API Key 用于外部系统（CI/CD、监控）调用 DBCheck REST API。创建后<b>仅显示一次</b>，请立即复制保存。
+            API Key 用于外部系统（CI/CD、监控）调用 Acdante DB Inspector REST API。创建后<b>仅显示一次</b>，请立即复制保存。
           </div>
           <div style="display:flex;gap:8px;margin-bottom:16px;">
             <button class="btn btn-primary" onclick="createApiKey()" style="font-size:12px;padding:6px 14px;">➕ 创建 API Key</button>
@@ -5236,14 +5236,14 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <div style="color:var(--text-muted);font-size:13px;margin-bottom:20px;line-height:1.7;white-space:pre-line">
             配置数据库客户端库，用于连接需要本地驱动的数据库（Oracle、YashanDB）。<br/>
             SQL Server 需要安装 Microsoft ODBC Driver（内置安装包可供使用）。<br/>
-            <strong style="color:var(--warn)">注意：</strong>修改后需要重启 DBCheck 才能生效。
+            <strong style="color:var(--warn)">注意：</strong>修改后需要重启 Acdante DB Inspector 才能生效。
           </div>
 
           <!-- 驱动自动配置 -->
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;">
             <div style="font-weight:600;font-size:14px;margin-bottom:10px;">⬇️ 驱动自动配置</div>
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;line-height:1.6;">
-              一键下载并解压数据库客户端库到 DBCheck 目录，无需手动前往官网下载。
+              一键下载并解压数据库客户端库到 Acdante DB Inspector 目录，无需手动前往官网下载。
             </div>
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.6;">
               当前下载版本：Oracle Instant Client 23.26，支持 Windows / Linux / macOS。
@@ -5589,7 +5589,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
             <div>
               <h2 style="margin:0;font-size:18px;">🧩 插件市场</h2>
               <p style="margin:4px 0 0 0;font-size:12px;color:var(--text-muted);">
-                浏览社区插件，一键安装扩展你的 DBCheck
+                浏览社区插件，一键安装扩展你的 Acdante DB Inspector
                 &nbsp;<a href="#" onclick="loadMarketPlugins(true)" style="font-size:11px;">🔄 刷新</a>
               </p>
             </div>
@@ -6211,7 +6211,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <!-- 1. 数据文件概览 -->
           <div class="card" style="margin-bottom:16px;">
             <h3 style="font-size:15px;font-weight:600;margin-bottom:4px;" data-i18n="webui.dm_overview_title">数据文件概览</h3>
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" data-i18n="webui.dm_overview_desc">以下文件是 DBCheck 的核心数据，升级或迁移时必须备份</p>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" data-i18n="webui.dm_overview_desc">以下文件是 Acdante DB Inspector 的核心数据，升级或迁移时必须备份</p>
             <div class="table-wrap">
               <table class="data-table" style="font-size:13px;">
                 <thead>
@@ -6262,7 +6262,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <button class="btn btn-ghost" onclick="dmCheckUpgrade()" data-i18n="webui.dm_upgrade_check">检测升级状态</button>
             </div>
             <div id="dm-upgrade-result">
-              <p style="font-size:13px;color:var(--text-muted);" data-i18n="webui.dm_upgrade_hint">升级 DBCheck 时，请确保备份以下核心文件：</p>
+              <p style="font-size:13px;color:var(--text-muted);" data-i18n="webui.dm_upgrade_hint">升级 Acdante DB Inspector 时，请确保备份以下核心文件：</p>
               <p style="font-size:12px;color:var(--text-muted);" data-i18n="webui.dm_upgrade_files">data/ 目录、pro_data/ 目录、inspection.db、.db_key</p>
             </div>
           </div>
@@ -6278,7 +6278,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <div class="card">
             <div class="card-title"><span>📊</span> <span data-i18n="webui.awr_upload_title">上传 AWR 报告</span></div>
             <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;" data-i18n="webui.awr_upload_hint">
-              上传 Oracle AWR HTML 报告（由 awrrpt.sql 生成），DBCheck 将自动解析并生成分析报告
+              上传 Oracle AWR HTML 报告（由 awrrpt.sql 生成），Acdante DB Inspector 将自动解析并生成分析报告
             </p>
             <div id="awr-drop-zone" style="border:2px dashed var(--border-color);border-radius:10px;padding:48px 24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);margin-bottom:16px"
                  ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='var(--card)'"
@@ -6447,7 +6447,7 @@ function applyI18N() {
   const subtitle = document.getElementById('topbar-sub');
   if (pageName === 'home') {
     if (title) title.textContent = i18n('webui.home_title') || '首页';
-    if (subtitle) subtitle.textContent = i18n('webui.home_subtitle') || '欢迎使用 DBCheck 数据库巡检工具';
+    if (subtitle) subtitle.textContent = i18n('webui.home_subtitle') || '欢迎使用 Acdante DB Inspector 数据库巡检工具';
   } else {
     // 用 showPage 中相同的 titles 映射刷新翻译
     const _titles = {
@@ -6579,7 +6579,7 @@ function showPage(name) {
   var navEl = document.getElementById('nav-' + name);
   if (navEl) navEl.classList.add('active');
   const titles = {
-    home:    [i18n('webui.home_title') || '首页',                      i18n('webui.home_subtitle') || '欢迎使用 DBCheck 数据库巡检工具'],
+    home:    [i18n('webui.home_title') || '首页',                      i18n('webui.home_subtitle') || '欢迎使用 Acdante DB Inspector 数据库巡检工具'],
     wizard:  [i18n('webui.nav_wizard') || '数据库巡检',                    i18n('webui.wizard_desc') || ''],
     reports: [i18n('webui.reports_title') || '数据库巡检历史',               i18n('webui.reports_desc') || ''],
     trend:   [i18n('webui.trend_title') || '历史趋势',                    i18n('webui.trend_desc') || ''],
@@ -6588,7 +6588,7 @@ function showPage(name) {
     ai:      [i18n('webui.ai_title') || 'AI 诊断',                       i18n('webui.ai_desc') || ''],
     datasources: [i18n('webui.nav_datasources') || '数据源管理',        i18n('webui.datasources_desc') || ''],
     rules:   [i18n('webui.nav_rules') || '巡检规则',                    i18n('webui.rules_desc') || ''],
-    license: [i18n('webui.nav_license') || '许可证',                    i18n('webui.license_desc') || '管理 DBCheck 许可证'],
+    license: [i18n('webui.nav_license') || '许可证',                    i18n('webui.license_desc') || '管理 Acdante DB Inspector 许可证'],
     backup:  ['💾 ' + (i18n('webui.backup_title') || '数据库备份管理'),  i18n('webui.backup_desc') || ''],
     apikey:  ['🔐 API Key 管理',                                    i18n('webui.apikey_desc') || '创建和管理 API 访问密钥'],
     account: ['👤 用户中心',                                         i18n('webui.account_desc') || '管理账户信息和安全设置'],
@@ -6602,7 +6602,7 @@ function showPage(name) {
     shares: ['🔗 分享管理', '管理已生成的巡检报告分享链接'],
     'monitor-slow': [i18n('monitor.slow_title') || '实时慢查询', i18n('monitor.slow_desc') || '定时拉取各数据源 Top SQL'],
     'monitor-conn': [i18n('monitor.conn_title') || '活跃连接监控', i18n('monitor.conn_desc') || '实时查看各数据源连接数'],
-    'data-management': [i18n('webui.data_management_title') || '数据管理', i18n('webui.data_management_desc') || '管理 DBCheck 自身数据文件'],
+    'data-management': [i18n('webui.data_management_title') || '数据管理', i18n('webui.data_management_desc') || '管理 Acdante DB Inspector 自身数据文件'],
     'awr': [i18n('webui.awr_nav') || 'AWR 报告分析', i18n('webui.awr_desc') || '上传 Oracle AWR HTML 报告自动生成分析报告'],
     'oracle-client': [i18n('webui.oracle_client_title') || '数据库驱动设置', ''],
     'plugin-market': [i18n('webui.plugin_market_title') || '插件市场', ''],
@@ -10646,11 +10646,11 @@ async function executeFixSql(taskId, sql) {
       <!-- Logo 区域 -->
       <div class="logo-area">
         <div class="logo-ring">
-          <img src="/dbcheck_logo.png" class="logo-img" alt="DBCheck"
+          <img src="/acdante-db-inspector-logo.png" class="logo-img" alt="Acdante DB Inspector"
                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
           <div class="logo-inner" style="display:none;">D</div>
         </div>
-        <div class="login-title">DBCheck</div>
+        <div class="login-title">Acdante DB Inspector</div>
         <div class="login-subtitle">智能数据库巡检与性能分析平台</div>
       </div>
 
@@ -10676,8 +10676,8 @@ async function executeFixSql(taskId, sql) {
         <span id="btn-text">登  录</span>
       </button>
 
-      <div class="login-footer">
-        <span id="login-version">--</span> · DBCheck © 2026
+      <div class="login-footer" style="display:none">
+        <span id="login-version">--</span> · Acdante DB Inspector © 2026
       </div>
     </div>
   </div>
@@ -11203,13 +11203,13 @@ function getTheme() {
 
 function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme || 'dark');
-  localStorage.setItem('dbcheck-theme', theme || 'dark');
+  localStorage.setItem('acdante-theme', theme || 'dark');
   var btn = document.getElementById('theme-toggle');
   if (btn) btn.textContent = (theme === 'light') ? '🌙' : '☀️';
 }
 
 function initTheme() {
-  var saved = localStorage.getItem('dbcheck-theme') || 'dark';
+  var saved = localStorage.getItem('acdante-theme') || 'dark';
   setTheme(saved);
 }
 
@@ -11616,7 +11616,7 @@ async function executeFixSql(taskId, sql) {
 
 async function loadApiKeys() {
   try {
-    const token = sessionStorage.getItem('dbcheck_admin') || _ADMIN_TOKEN;
+    const token = sessionStorage.getItem('acdante_admin') || _ADMIN_TOKEN;
     const res = await fetch('/api/v1/admin/keys', {
       headers: {'X-Admin-Token': token}
     });
@@ -11649,7 +11649,7 @@ async function createApiKey() {
   const name = await showPromptModal('创建 API Key', '请输入 Key 名称（如：CI/CD、Grafana 监控）：');
   if (!name) return;
   try {
-    const token = sessionStorage.getItem('dbcheck_admin') || _ADMIN_TOKEN;
+    const token = sessionStorage.getItem('acdante_admin') || _ADMIN_TOKEN;
     const res = await fetch('/api/v1/admin/keys', {
       method: 'POST',
       headers: {
@@ -11674,7 +11674,7 @@ async function createApiKey() {
 async function deleteApiKey(id, name) {
   showConfirmModal('删除 API Key', '确定删除 Key「' + name + '」？<br>删除后使用此 Key 的服务将<b>立即失效</b>。', async function() {
     try {
-      const token = sessionStorage.getItem('dbcheck_admin') || _ADMIN_TOKEN;
+      const token = sessionStorage.getItem('acdante_admin') || _ADMIN_TOKEN;
       const res = await fetch('/api/v1/admin/keys/' + id, {
         method: 'DELETE',
         headers: {'X-Admin-Token': token}
@@ -13268,7 +13268,7 @@ async function deleteBackupHistory(recordId) {
   </div>
   <div class="chat-messages" id="chat-messages">
     <div class="chat-msg ai" id="chat-welcome">
-      您好！我是 DBCheck AI 巡检助手 🎉<br><br>
+      您好！我是 Acdante DB Inspector AI 巡检助手 🎉<br><br>
       <strong>🔍 巡检执行</strong><br>
       • 巡检 MySQL-01 的连接数<br>
       • 查看 PostgreSQL 的锁等待<br>
@@ -14492,7 +14492,7 @@ async function deleteBackupHistory(recordId) {
         el.innerHTML =
           `✅ <strong>SQL Server ODBC 驱动已安装</strong><br/>` +
           `已安装驱动: ${data.available.map(d => '<code>' + d + '</code>').join(' / ')}<br/>` +
-          `DBCheck 将自动使用: <code>${data.using || data.available[0]}</code>`;
+          `Acdante DB Inspector 将自动使用: <code>${data.using || data.available[0]}</code>`;
         el.style.background = 'rgba(76,175,80,0.08)';
         el.style.border = '1px solid rgba(76,175,80,0.3)';
         el.style.color = '#4caf50';
@@ -15313,9 +15313,9 @@ async function deleteBackupHistory(recordId) {
     <div class="about-hero">
       <button class="about-close-btn" onclick="closeAboutModal()">✕</button>
       <div class="about-hero-inner">
-        <img class="about-logo" src="/dbcheck_logo.png" alt="DBCheck">
+        <img class="about-logo" src="/acdante-db-inspector-logo.png" alt="Acdante DB Inspector">
         <div class="about-hero-text">
-          <h2>DBCheck</h2>
+          <h2>Acdante DB Inspector</h2>
           <div class="about-sub">Database Intelligent Inspector <span id="about-version">{{ version }}</span></div>
         </div>
       </div>
@@ -15323,12 +15323,12 @@ async function deleteBackupHistory(recordId) {
     <!-- Body -->
     <div class="about-body">
       <p class="about-desc" data-i18n="webui.about_desc">
-        DBCheck 是一款开源数据库智能巡检工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB、GBase 等主流数据库的健康巡检与 AI 诊断。
+        Acdante DB Inspector 是一款开源数据库智能巡检工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB、GBase 等主流数据库的健康巡检与 AI 诊断。
       </p>
       <div class="about-meta">
         <span class="about-meta-item">作者：Jack Ge</span>
         <span class="about-meta-item">协议：MIT License</span>
-        <span class="about-meta-item">官网：<a href="https://dbcheck.top" target="_blank">dbcheck.top</a></span>
+        <span class="about-meta-item">官网：<a href="https://acdante-db-inspector.top" target="_blank">acdante-db-inspector.top</a></span>
       </div>
 
       <!-- 支持的数据库 -->
@@ -15351,8 +15351,8 @@ async function deleteBackupHistory(recordId) {
       </div>
     </div>
     <!-- Footer -->
-    <div class="about-footer">
-      © 2026 DBCheck · Powered by dbcheck.top
+    <div class="about-footer" style="display:none">
+      © 2026 Acdante DB Inspector · Powered by acdante-db-inspector.top
     </div>
   </div>
 </div>
@@ -15392,25 +15392,25 @@ document.addEventListener('keydown', function(e) {
     var t=document.getElementById('agreement-title');
     var z=document.getElementById('agreement-zh');
     var e=document.getElementById('agreement-en');
-    console.log('[DBCheck] agreement elements:', !!t, !!z, !!e);
+    console.log('[Acdante DB Inspector] agreement elements:', !!t, !!z, !!e);
     if(t&&z&&e){
       var dt=_d(_a[0]); var dz=_d(_a[1]); var de=_d(_a[2]);
-      console.log('[DBCheck] decoded lengths:', dt.length, dz.length, de.length);
+      console.log('[Acdante DB Inspector] decoded lengths:', dt.length, dz.length, de.length);
       t.innerHTML=dt; z.innerHTML=dz; e.innerHTML=de;
-      console.log('[DBCheck] agreement content injected OK');
+      console.log('[Acdante DB Inspector] agreement content injected OK');
     } else {
-      console.error('[DBCheck] agreement elements not found!');
+      console.error('[Acdante DB Inspector] agreement elements not found!');
     }
   } catch(err) {
-    console.error('[DBCheck] agreement decode error:', err);
+    console.error('[Acdante DB Inspector] agreement decode error:', err);
   }
 })();
 
   // ─── Slogan 动画循环 ───
   (function(){
     const slogans = [
-      { text: '全库掌控，一检即安', sub: 'DBCheck · Database Inspector' },
-      { text: '数据库安全，尽在 DBCheck', sub: 'Secure Your Data, Simplify Your Work' },
+      { text: '全库掌控，一检即安', sub: 'Acdante DB Inspector · Database Inspector' },
+      { text: '数据库安全，尽在 Acdante DB Inspector', sub: 'Secure Your Data, Simplify Your Work' },
       { text: '洞悉每一行，守护每一库', sub: 'Insight in Every Row, Guard for Every DB' },
       { text: '一键巡检，万无一失', sub: 'One-Click Inspection, Zero Miss' }
     ];
@@ -16667,12 +16667,12 @@ function mkdirRemote() {
 
       var isCollapsed = sidebar.classList.contains('collapsed');
       btn.textContent = isCollapsed ? '»' : '«';
-      localStorage.setItem('dbcheck_sidebar_collapsed', isCollapsed);
+      localStorage.setItem('acdante_sidebar_collapsed', isCollapsed);
     }
 
     // 页面加载时恢复折叠状态
     document.addEventListener('DOMContentLoaded', function() {
-      var collapsed = localStorage.getItem('dbcheck_sidebar_collapsed') === 'true';
+      var collapsed = localStorage.getItem('acdante_sidebar_collapsed') === 'true';
       if (collapsed) {
         document.querySelector('.sidebar').classList.add('collapsed');
         document.querySelector('.app-shell').classList.add('sidebar-collapsed');
