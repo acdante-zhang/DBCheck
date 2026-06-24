@@ -15545,6 +15545,9 @@ async function deleteBackupHistory(recordId) {
       <p class="about-desc" data-i18n="webui.about_desc">
         Acdante DB Inspector 是一款开源数据库智能巡检工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB、GBase 等主流数据库的健康巡检与 AI 诊断。
       </p>
+      <div id="about-admin-tools" style="display:none;margin-bottom:12px;">
+        <button onclick="openSysInfoEditor()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:12px;">⚙️ 编辑系统信息</button>
+      </div>
       <div class="about-meta">
         <span class="about-meta-item" style="display:none">作者：Acdante</span>
         <span class="about-meta-item" style="display:none">协议：Proprietary</span>
@@ -15563,15 +15566,14 @@ async function deleteBackupHistory(recordId) {
         <span class="about-db-chip"><img src="/yashandb.png" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'" style="width:16px;height:16px;object-fit:contain"><span class="db-emoji" style="display:none;">🗻</span> YashanDB</span>
       </div>
 
-      <!-- 君子协定（Base64 encoded to prevent static search） -->
-      <div class="about-agreement" id="agreement-container">
-        <div class="about-agreement-title" id="agreement-title"></div>
-        <div class="about-agreement-text" id="agreement-zh" lang="zh"></div>
-        <div class="about-agreement-text" id="agreement-en" lang="en" style="display:none;"></div>
+      <!-- 系统自定义信息 -->
+      <div class="about-agreement" id="about-custom-info" style="display:none;">
+        <div class="about-agreement-title" id="about-custom-title"></div>
+        <div class="about-agreement-text" id="about-custom-text"></div>
       </div>
     </div>
     <!-- Footer -->
-    <div class="about-footer" style="display:none">
+    <div class="about-footer" id="about-footer" style="display:none">
       © 2026 Acdante DB Inspector · Powered by acdante-db-inspector.top
     </div>
   </div>
@@ -15581,11 +15583,10 @@ async function deleteBackupHistory(recordId) {
 function showAboutModal() {
   document.getElementById('about-modal').style.display = 'block';
   document.body.style.overflow = 'hidden';
-  var isZh = (document.documentElement.lang === 'zh');
-  var notes = document.querySelectorAll('.about-agreement-text');
-  for (var i = 0; i < notes.length; i++) {
-    notes[i].style.display = (notes[i].getAttribute('lang') === (isZh ? 'zh' : 'en')) ? '' : 'none';
-  }
+  // ADMIN 显示编辑按钮
+  var usr = window._currentUser || {};
+  var isAdmin = usr.role === 'admin' || usr.auth_source === 'legacy';
+  document.getElementById('about-admin-tools').style.display = isAdmin ? '' : 'none';
 }
 function closeAboutModal() {
   document.getElementById('about-modal').style.display = 'none';
@@ -15600,30 +15601,92 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeAboutModal();
 });
 
-// ─── 君子协定内容解密 ───
-(function(){
-  try {
-    var _a=[
-      "4pqg77iPIOWQm+WtkOWNj+Wumu+8iEdlbnRsZW1hbidzIEFncmVlbWVudO+8iQ==",
-      "5q+P5bm0IDxzdHJvbmc+NeaciDE55pel6IezNeaciDI15pelPC9zdHJvbmc+77yMREJDaGVjayDnlYzpnaLlsIblvLrliLbku6U8c3Ryb25nPueBsOW6puaooeW8jzwvc3Ryb25nPuaYvuekuu+8jOS4lOeUqOaIt+aXoOazleWIh+aNouS4u+mimOOAgjxici8+6K+35bCK6YeN6L+Z5LiA6K6+6K6h77yM5LiN6KaB5bCd6K+V5L+u5pS55oiW57uV6L+H54Gw5bqm5qih5byP44CC",
-      "RXZlcnkgeWVhciBmcm9tIDxzdHJvbmc+TWF5IDE5IHRvIE1heSAyNTwvc3Ryb25nPiwgdGhlIERCQ2hlY2sgaW50ZXJmYWNlIHdpbGwgYmUgZm9yY2VkIHRvIDxzdHJvbmc+Z3JheXNjYWxlIG1vZGU8L3N0cm9uZz4gYW5kIHVzZXJzIGNhbm5vdCBzd2l0Y2ggdGhlbWVzLjxici8+UGxlYXNlIHJlc3BlY3QgdGhpcyBkZXNpZ24gYW5kIGRvIG5vdCBhdHRlbXB0IHRvIG1vZGlmeSBvciBieXBhc3MgdGhlIGdyYXlzY2FsZSBtb2RlIGR1cmluZyB0aGlzIHBlcmlvZCBlYWNoIHllYXIu"
-    ];
-    var _d=function(s){var b=atob(s);var l=b.length;var a=new Uint8Array(l);for(var i=0;i<l;i++)a[i]=b.charCodeAt(i);return new TextDecoder('utf-8').decode(a);};
-    var t=document.getElementById('agreement-title');
-    var z=document.getElementById('agreement-zh');
-    var e=document.getElementById('agreement-en');
-    console.log('[Acdante DB Inspector] agreement elements:', !!t, !!z, !!e);
-    if(t&&z&&e){
-      var dt=_d(_a[0]); var dz=_d(_a[1]); var de=_d(_a[2]);
-      console.log('[Acdante DB Inspector] decoded lengths:', dt.length, dz.length, de.length);
-      t.innerHTML=dt; z.innerHTML=dz; e.innerHTML=de;
-      console.log('[Acdante DB Inspector] agreement content injected OK');
-    } else {
-      console.error('[Acdante DB Inspector] agreement elements not found!');
+// ─── 加载自定义系统信息 ───
+function loadAboutCustomInfo() {
+  fetch('/api/sysinfo').then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.ok || !d.data) return;
+    var cfg = d.data;
+    var footer = document.getElementById('about-footer');
+    var customDiv = document.getElementById('about-custom-info');
+    if (cfg.footer_text) { footer.style.display = ''; footer.textContent = cfg.footer_text; }
+    if (cfg.custom_title || cfg.custom_text) {
+      customDiv.style.display = '';
+      document.getElementById('about-custom-title').textContent = cfg.custom_title || '';
+      document.getElementById('about-custom-text').innerHTML = cfg.custom_text || '';
     }
-  } catch(err) {
-    console.error('[Acdante DB Inspector] agreement decode error:', err);
-  }
+    if (cfg.system_name) {
+      var aboutH2 = document.querySelector('.about-hero-text h2');
+      if (aboutH2) aboutH2.textContent = cfg.system_name;
+    }
+    if (cfg.system_subtitle) {
+      var aboutSub = document.querySelector('.about-sub');
+      if (aboutSub) aboutSub.innerHTML = cfg.system_subtitle + ' <span id="about-version">{{ version }}</span>';
+    }
+    if (cfg.login_title) {
+      var loginTitle = document.querySelector('.login-title');
+      if (loginTitle) loginTitle.textContent = cfg.login_title;
+    }
+    if (cfg.login_subtitle) {
+      var loginSub = document.querySelector('.login-sub');
+      if (loginSub) loginSub.textContent = cfg.login_subtitle;
+    }
+    if (cfg.sidebar_title) {
+      var sideH1 = document.querySelector('.sidebar h1');
+      if (sideH1) sideH1.textContent = cfg.sidebar_title;
+    }
+    if (cfg.home_subtitle) {
+      var homeSub = document.getElementById('home-subtitle');
+      if (!homeSub) homeSub = document.querySelector('#page-home .slogan-sub');
+      if (homeSub) homeSub.textContent = cfg.home_subtitle;
+    }
+  }).catch(function(e) { console.log('loadAboutCustomInfo:', e); });
+}
+loadAboutCustomInfo();
+
+async function openSysInfoEditor() {
+  try {
+    var r = await fetch('/api/sysinfo');
+    var d = await r.json();
+    var cfg = d.data || {};
+    var fields = [
+      {key:'system_name', label:'系统名称', placeholder:'Acdante DB Inspector'},
+      {key:'system_subtitle', label:'副标题', placeholder:'Database Intelligent Inspector'},
+      {key:'footer_text', label:'页脚文字', placeholder:'© 2026 Acdante DB Inspector'},
+      {key:'custom_title', label:'自定义标题', placeholder:'关于系统'},
+      {key:'custom_text', label:'自定义内容(支持HTML)', placeholder:'<p>描述信息...</p>'},
+      {key:'login_title', label:'登录页标题', placeholder:'Acdante DB Inspector'},
+      {key:'login_subtitle', label:'登录页副标题', placeholder:'智能数据库巡检与性能分析平台'},
+      {key:'sidebar_title', label:'侧边栏标题', placeholder:'Acdante DB Inspector'},
+      {key:'home_subtitle', label:'首页副标题', placeholder:'欢迎使用 Acdante DB Inspector 数据库巡检工具'},
+    ];
+    var html = '<div style="max-height:60vh;overflow-y:auto;padding:8px;">';
+    fields.forEach(function(f) {
+      html += '<div class="um-form-group"><label>' + f.label + '</label>';
+      html += '<input type="text" id="si-' + f.key + '" value="' + (cfg[f.key]||'').replace(/"/g,'&quot;') + '" placeholder="' + (f.placeholder||'') + '" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">';
+      html += '</div>';
+    });
+    html += '<div style="text-align:right;margin-top:12px;">';
+    html += '<button class="um-btn" onclick="document.getElementById(\'si-modal\').remove()" style="background:var(--border);margin-right:8px;">取消</button>';
+    html += '<button class="um-btn um-btn-primary" onclick="saveSysInfo()">保存</button></div></div>';
+    var modal = document.createElement('div');
+    modal.id = 'si-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = '<div style="background:var(--surface);border-radius:12px;padding:24px;max-width:600px;width:90%;"><h3 style="margin-bottom:16px;">⚙️ 自定义系统信息</h3>' + html + '</div>';
+    modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+    document.body.appendChild(modal);
+  } catch(e) { toastError('加载失败: ' + e.message); }
+}
+
+async function saveSysInfo() {
+  var data = {};
+  var keys = ['system_name','system_subtitle','footer_text','custom_title','custom_text','login_title','login_subtitle','sidebar_title','home_subtitle'];
+  keys.forEach(function(k) { data[k] = document.getElementById('si-' + k).value.trim(); });
+  try {
+    var r = await fetch('/api/sysinfo', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    var d = await r.json();
+    if (d.ok) { document.getElementById('si-modal').remove(); loadAboutCustomInfo(); toastSuccess('系统信息已更新'); }
+    else { toastError(d.error || '保存失败'); }
+  } catch(e) { toastError('保存失败: ' + e.message); }
 })();
 
   // ─── Slogan 动画循环 ───
@@ -17337,6 +17400,7 @@ function mkdirRemote() {
     const grid = document.getElementById('hm-card-grid');
     const cards = inst.cards || {};
     const dbType = inst.db_type || '';
+    const cardConfig = inst.card_config || {};
 
     // 卡片渲染器映射
     const renderers = {
@@ -17351,18 +17415,27 @@ function mkdirRemote() {
       'instance_info':    hmRenderInfoCard,
     };
 
-    let html = '';
+    // 按 order 排序，构建有序卡片列表
+    var orderedCards = [];
     for (const [cardType, renderFn] of Object.entries(renderers)) {
       if (!cards[cardType]) continue;
-      if (cards[cardType]._error) continue; // 跳过查询失败的卡片
-      // RAC卡片：单机环境（gv$instance只有1行）不显示
+      if (cards[cardType]._error) continue;
       if (cardType === 'rac_status') {
         const racRows = Array.isArray(cards[cardType]) ? cards[cardType] : [];
         if (racRows.length <= 1) continue;
       }
-      const cardHtml = renderFn(cards[cardType], dbType);
-      if (cardHtml) html += cardHtml;
+      var cfg = cardConfig[cardType] || {};
+      orderedCards.push({ cardType, renderFn, order: cfg.order || 99, size: cfg.size || 'medium' });
     }
+    orderedCards.sort(function(a, b) { return a.order - b.order; });
+
+    var html = '';
+    orderedCards.forEach(function(item) {
+      var cfg = cardConfig[item.cardType] || {};
+      var cardClass = item.size === 'large' ? 'large' : (item.size === 'small' ? 'small' : '');
+      var cardHtml = item.renderFn(cards[item.cardType], dbType, cardClass);
+      if (cardHtml) html += cardHtml;
+    });
 
     if (!html) {
       html = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">
@@ -17374,7 +17447,9 @@ function mkdirRemote() {
   // ── 各卡片渲染 ──
 
   function hmCardWrap(title, icon, body, cardClass) {
-    var style = (cardClass === 'large') ? ' style="grid-column:span 2;"' : '';
+    var style = '';
+    if (cardClass === 'large') style = ' style="grid-column:span 2;"';
+    else if (cardClass === 'small') style = ' style="grid-column:span 1;max-width:380px;"';
     return `<div class="hm-card ${cardClass||''}"${style}>
       <div class="hm-card-header"><span class="hm-card-icon">${icon||'📋'}</span><span class="hm-card-title">${title}</span></div>
       <div class="hm-card-body">${body}</div></div>`;
@@ -17409,26 +17484,26 @@ function mkdirRemote() {
     return `<div class="hm-usage-bar"><div class="hm-usage-fill ${cls}" style="width:${Math.min(pct,100)}%"></div></div><span style="font-size:11px;margin-left:4px;color:${pct>90?'#f5222d':pct>80?'#faad14':'#52c41a'}">${pct}%</span>`;
   }
 
-  function hmRenderRacCard(data) {
+  function hmRenderRacCard(data, dbType, cardClass) {
     const rows = Array.isArray(data) ? data : (data && data.instances ? data.instances : []);
     if (!rows || !rows.length) return '';
     return hmCardWrap('RAC 集群状态', '🖥️', hmMiniTable(rows, [
       {key:'inst_id',label:'实例ID'}, {key:'instance_name',label:'实例名'},
       {key:'host_name',label:'节点'}, {key:'instance_role',label:'角色'},
       {key:'status',label:'状态'}, {key:'uptime_hours',label:'运行(小时)'}
-    ]));
+    ]), cardClass);
   }
 
-  function hmRenderDbSizeCard(data) {
+  function hmRenderDbSizeCard(data, dbType, cardClass) {
     const d = Array.isArray(data) ? data[0] : data;
     if (!d) return '';
     let body = '';
     if (d.datafile_gb !== undefined) body += `<div class="hm-stat"><span>数据文件</span><b>${d.datafile_gb} GB</b></div>`;
     if (d.segment_gb !== undefined) body += `<div class="hm-stat"><span>段大小</span><b>${d.segment_gb} GB</b></div>`;
-    return hmCardWrap('数据库总大小', '💾', body);
+    return hmCardWrap('数据库总大小', '💾', body, cardClass);
   }
 
-  function hmRenderAdgCard(data) {
+  function hmRenderAdgCard(data, dbType, cardClass) {
     const d = Array.isArray(data) ? data[0] : data;
     if (!d) return '';
     const lagColor = (d.max_apply_lag_min||0) > 5 ? '#f5222d' : (d.max_apply_lag_min||0) > 1 ? '#faad14' : '#52c41a';
@@ -17439,20 +17514,20 @@ function mkdirRemote() {
     if (d.dest_details) {
       body += `<div class="hm-stat" style="font-size:11px;"><span>归档目的地</span><b style="font-weight:normal;word-break:break-all;">${d.dest_details}</b></div>`;
     }
-    return hmCardWrap('ADG 同步状态', '🔄', body, 'large');
+    return hmCardWrap('ADG 同步状态', '🔄', body, cardClass);
   }
 
-  function hmRenderBackupCard(data) {
+  function hmRenderBackupCard(data, dbType, cardClass) {
     const rows = Array.isArray(data) ? data : [];
-    if (!rows.length) return hmCardWrap('备份状态', '💿', '<div style="color:var(--text-muted);">无最近备份记录</div>', 'large');
+    if (!rows.length) return hmCardWrap('备份状态', '💿', '<div style="color:var(--text-muted);">无最近备份记录</div>', cardClass);
     return hmCardWrap('备份状态', '💿', hmMiniTable(rows.slice(0,7), [
       {key:'backup_time',label:'备份时间'}, {key:'status',label:'状态'},
       {key:'input_type',label:'类型'}, {key:'size_gb',label:'大小(GB)'},
       {key:'duration_min',label:'耗时(分)'}
-    ]));
+    ]), cardClass);
   }
 
-  function hmRenderAsmCard(data) {
+  function hmRenderAsmCard(data, dbType, cardClass) {
     const rows = Array.isArray(data) ? data : [];
     if (!rows.length) return '';
     let body = '';
@@ -17463,10 +17538,10 @@ function mkdirRemote() {
         ${hmUsageBar(d.usage_pct)}
       </div>`;
     });
-    return hmCardWrap('ASM 磁盘组', '💽', body);
+    return hmCardWrap('ASM 磁盘组', '💽', body, cardClass);
   }
 
-  function hmRenderTablespaceCard(data) {
+  function hmRenderTablespaceCard(data, dbType, cardClass) {
     const rows = Array.isArray(data) ? data : [];
     if (!rows.length) return '';
     let body = '';
@@ -17481,10 +17556,10 @@ function mkdirRemote() {
       </div>`;
     });
     if (rows.length > 15) body += `<div style="text-align:center;color:var(--text-muted);font-size:11px;">... 还有 ${rows.length-15} 个表空间</div>`;
-    return hmCardWrap('表空间使用率', '📊', body);
+    return hmCardWrap('表空间使用率', '📊', body, cardClass);
   }
 
-  function hmRenderSessionCard(data) {
+  function hmRenderSessionCard(data, dbType, cardClass) {
     const d = Array.isArray(data) ? data[0] : data;
     if (!d) return '';
     let body = `<div class="hm-stat"><span>总会话</span><b>${d.total_sessions||0} / ${d.session_limit||0}</b></div>
@@ -17494,13 +17569,13 @@ function mkdirRemote() {
         <span>⚪ 非活动: <b>${d.inactive_sessions||0}</b></span>
         ${d.background_sessions!==undefined?`<span>🔵 后台: <b>${d.background_sessions}</b></span>`:''}
       </div>`;
-    return hmCardWrap('会话统计', '👥', body);
+    return hmCardWrap('会话统计', '👥', body, cardClass);
   }
 
-  function hmRenderSchemaCard(data) {
+  function hmRenderSchemaCard(data, dbType, cardClass) {
     const rows = Array.isArray(data) ? data : [];
     if (!rows.length) return hmCardWrap('Schema 用户', '👤',
-      '<button onclick="hmLoadSchemaUsers()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);cursor:pointer;">点击加载 Schema 用户列表</button>');
+      '<button onclick="hmLoadSchemaUsers()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);cursor:pointer;">点击加载 Schema 用户列表</button>', cardClass);
     return hmCardWrap('Schema 用户', '👤',
       `<div style="max-height:300px;overflow-y:auto;">${hmMiniTable(rows.slice(0,30), [
         {key:'username',label:'用户名'}, {key:'account_status',label:'状态'},
@@ -17509,14 +17584,14 @@ function mkdirRemote() {
       (rows.length>30?`<div style="font-size:11px;color:var(--text-muted);text-align:center;">共 ${rows.length} 个用户</div>`:''));
   }
 
-  function hmRenderInfoCard(data) {
+  function hmRenderInfoCard(data, dbType, cardClass) {
     const d = Array.isArray(data) ? data[0] : data;
     if (!d) return '';
     let body = `<div class="hm-stat"><span>实例</span><b>${d.instance_name||'-'}</b></div>
       <div class="hm-stat"><span>主机</span><b>${d.host_name||'-'}</b></div>
       <div class="hm-stat"><span>版本</span><b>${d.version||'-'}</b></div>
       <div class="hm-stat"><span>启动时间</span><b>${d.startup_time||'-'}</b></div>`;
-    return hmCardWrap('实例信息', 'ℹ️', body);
+    return hmCardWrap('实例信息', 'ℹ️', body, cardClass);
   }
 
   async function hmLoadSchemaUsers() {

@@ -247,6 +247,38 @@ try:
 except ImportError as e:
     print(f"  ⚠️ RBAC 用户管理模块加载失败: {e}")
 
+# ── 系统自定义信息 API ───────────────────────────────
+import os as _os
+_SYSINFO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pro_data', 'sysinfo.json')
+
+def _load_sysinfo():
+    if _os.path.exists(_SYSINFO_FILE):
+        try:
+            with open(_SYSINFO_FILE, 'r', encoding='utf-8') as f:
+                return _json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def _save_sysinfo(data):
+    _os.makedirs(_os.path.dirname(_SYSINFO_FILE), exist_ok=True)
+    with open(_SYSINFO_FILE, 'w', encoding='utf-8') as f:
+        _json.dump(data, f, ensure_ascii=False, indent=2)
+
+@app.route('/api/sysinfo', methods=['GET'])
+def api_get_sysinfo():
+    """获取系统自定义信息"""
+    return jsonify({'ok': True, 'data': _load_sysinfo()})
+
+@app.route('/api/sysinfo', methods=['POST'])
+def api_save_sysinfo():
+    """保存系统自定义信息（仅管理员）"""
+    if session.get('role') != 'admin' and session.get('auth_source') != 'legacy':
+        return jsonify({'ok': False, 'error': '仅管理员可修改'}), 403
+    data = request.get_json() or {}
+    _save_sysinfo(data)
+    return jsonify({'ok': True, 'msg': '保存成功'})
+
 # ── 工具函数 ───────────────────────────────────────────────
 def _ts():
     return datetime.datetime.now().strftime('%H:%M:%S')
@@ -3662,6 +3694,7 @@ def api_health_monitor_instance(instance_id):
                 'host': data.get('host', ''),
                 'port': data.get('port', ''),
                 'cards': data.get('cards', {}),
+                'card_config': CARD_DISPLAY_CONFIG,  # 传递卡片显示配置
                 'error': data.get('error'),
                 'ts': data.get('ts', 0),
             }
@@ -4343,6 +4376,22 @@ _DASHBOARD_DB_DIR = os.path.join(BASE_DIR, 'pro_data')
 _DASHBOARD_DB_PATH = os.path.join(_DASHBOARD_DB_DIR, 'dashboard.db')
 
 
+# ── RBAC 数据源权限校验辅助 ──────────────────────────
+def _check_rbac_asset_access(instance_id):
+    """检查当前 RBAC 用户是否有权访问指定数据源"""
+    if session.get('auth_source') != 'rbac':
+        return True  # 非 RBAC 用户放行
+    if session.get('role') == 'admin':
+        return True  # RBAC admin 全权
+    try:
+        from user_management.services.perm_service import PermService
+        ps = PermService()
+        allowed_ids = ps.get_allowed_asset_ids(session['user_id'])
+        return str(instance_id) in [str(a) for a in allowed_ids]
+    except Exception:
+        return False  # fail-closed
+
+
 def _get_dashboard_db():
     import sqlite3
     os.makedirs(_DASHBOARD_DB_DIR, exist_ok=True)
@@ -4857,10 +4906,12 @@ def api_pro_datasources():
                 from user_management.services.perm_service import PermService
                 ps = PermService()
                 allowed_ids = ps.get_allowed_asset_ids(session['user_id'])
-                if allowed_ids:
-                    instances = [i for i in instances if str(i.get('id')) in [str(a) for a in allowed_ids]]
+                # 严格过滤：空绑定返回空列表，不允许看到任何数据源
+                allowed_strs = [str(a) for a in allowed_ids]
+                instances = [i for i in instances if str(i.get('id')) in allowed_strs]
             except Exception:
-                pass
+                # fail-closed：权限服务异常时返回空列表，不暴露数据
+                instances = []
         return jsonify({'ok': True, 'datasources': instances})
     except ImportError as e:
         import traceback
@@ -4881,6 +4932,9 @@ def api_pro_datasource(instance_id):
         inst = im.get_instance(instance_id, mask_password=False)
         if not inst:
             return jsonify({'ok': False, 'error': '数据源不存在'})
+        # RBAC 数据权限校验
+        if not _check_rbac_asset_access(instance_id):
+            return jsonify({'ok': False, 'error': '无权访问该数据源'}), 403
         return jsonify({'ok': True, 'datasource': inst})
     except ImportError as e:
         import traceback
