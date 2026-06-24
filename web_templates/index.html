@@ -17500,7 +17500,7 @@ function mkdirRemote() {
     const rows = Array.isArray(data) ? data : [];
     if (!rows.length) return hmCardWrap('Schema 用户', '👤',
       '<button onclick="hmLoadSchemaUsers()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);cursor:pointer;">点击加载 Schema 用户列表</button>');
-    return hmCardWrap('Schema 用户', '���',
+    return hmCardWrap('Schema 用户', '👤',
       `<div style="max-height:300px;overflow-y:auto;">${hmMiniTable(rows.slice(0,30), [
         {key:'username',label:'用户名'}, {key:'account_status',label:'状态'},
         {key:'created_date',label:'创建日期'}, {key:'default_tablespace',label:'默认表空间'}

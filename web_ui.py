@@ -4589,6 +4589,10 @@ def api_dashboard_share_data(token):
         return jsonify({'ok': True, 'cards': result_cards, 'config_name': row['name']})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/dashboard/share/<token>', methods=['GET'])
+def dashboard_share_page(token):
     """只读看板页面"""
     try:
         conn = _get_dashboard_db()
