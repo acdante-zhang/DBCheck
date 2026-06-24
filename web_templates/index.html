@@ -3993,7 +3993,7 @@ function formatBytes(bytes) {
   <!-- ─── Sidebar ─── -->
   <aside class="sidebar">
     <div class="sidebar-logo">
-      <img src="/acdante-db-inspector-logo.png" alt="Acdante DB Inspector" style="width:40px;height:40px;margin-bottom:10px;">
+      <img src="/dbcheck_logo.png" alt="Acdante DB Inspector" style="width:40px;height:40px;margin-bottom:10px;">
       <span class="sidebar-vertical-text">Acdante DB Inspector</span>
       <h1>Acdante DB Inspector <span class="edition-badge community" id="sidebar-edition-badge" data-i18n="webui.edition_badge">社区版</span></h1>
       <p data-i18n="webui.logo_subtitle">基于 AI 的智能数据库巡检工具</p>
@@ -4097,6 +4097,9 @@ function formatBytes(bytes) {
     </div>
     <div class="nav-item" onclick="showPage('data-management')" id="nav-data-management">
       <span class="icon">📦</span> <span data-i18n="webui.nav_data_management">数据管理</span>
+    </div>
+    <div class="nav-item" onclick="window.open('/um/admin','_blank')" id="nav-um-admin">
+      <span class="icon">👥</span> <span>用户管理</span>
     </div>
     <div class="nav-item" onclick="showAboutModal()" id="nav-about">
       <span class="icon">💡</span> <span data-i18n="webui.nav_about">关于 Acdante DB Inspector</span>
@@ -10646,7 +10649,7 @@ async function executeFixSql(taskId, sql) {
       <!-- Logo 区域 -->
       <div class="logo-area">
         <div class="logo-ring">
-          <img src="/acdante-db-inspector-logo.png" class="logo-img" alt="Acdante DB Inspector"
+          <img src="/dbcheck_logo.png" class="logo-img" alt="Acdante DB Inspector"
                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
           <div class="logo-inner" style="display:none;">D</div>
         </div>
@@ -15313,7 +15316,7 @@ async function deleteBackupHistory(recordId) {
     <div class="about-hero">
       <button class="about-close-btn" onclick="closeAboutModal()">✕</button>
       <div class="about-hero-inner">
-        <img class="about-logo" src="/acdante-db-inspector-logo.png" alt="Acdante DB Inspector">
+        <img class="about-logo" src="/dbcheck_logo.png" alt="Acdante DB Inspector">
         <div class="about-hero-text">
           <h2>Acdante DB Inspector</h2>
           <div class="about-sub">Database Intelligent Inspector <span id="about-version">{{ version }}</span></div>
@@ -15326,9 +15329,9 @@ async function deleteBackupHistory(recordId) {
         Acdante DB Inspector 是一款开源数据库智能巡检工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB、GBase 等主流数据库的健康巡检与 AI 诊断。
       </p>
       <div class="about-meta">
-        <span class="about-meta-item">作者：Jack Ge</span>
-        <span class="about-meta-item">协议：MIT License</span>
-        <span class="about-meta-item">官网：<a href="https://acdante-db-inspector.top" target="_blank">acdante-db-inspector.top</a></span>
+        <span class="about-meta-item" style="display:none">作者：Acdante</span>
+        <span class="about-meta-item" style="display:none">协议：Proprietary</span>
+        <span class="about-meta-item" style="display:none">官网：<a href="#">-</a></span>
       </div>
 
       <!-- 支持的数据库 -->

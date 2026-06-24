@@ -177,37 +177,8 @@ app = Flask(__name__, template_folder='web_templates', static_folder='web_templa
 app.config['SECRET_KEY'] = os.urandom(24)
 socketio.init_app(app)
 
-# ── 纪念日灰度模式（5月19-25日，不可调整）───────────────────────
-@app.before_request
-def _enforce_grayscale():
-    """每年 5月19-25 日，强制所有响应带 grayscale filter"""
-    import datetime as _dt
-    now = _dt.datetime.now()
-    g = now.month == 5 and 19 <= now.day <= 25
-    from flask import g as _flask_g
-    _flask_g._grayscale = g
-
-
-@app.after_request
-def _inject_grayscale(response):
-    from flask import g as _flask_g
-    if not getattr(_flask_g, '_grayscale', False):
-        return response
-    if 'text/html' not in response.content_type:
-        return response
-    body = response.get_data(as_text=True)
-    inject_css = '''
-<style id="grayscale-enforce">
-  /* 纪念日灰度模式（5月19-25日），不可调整 */
-  body { filter: grayscale(100%) !important; }
-  button[onclick*="toggleTheme"] { pointer-events: none !important; opacity: 0.5 !important; }
-</style>
-'''
-    if '</head>' in body:
-        body = body.replace('</head>', inject_css + '\n</head>', 1)
-    response.set_data(body)
-    response.headers['Content-Length'] = len(response.get_data())
-    return response
+# ── 灰度模式（已禁用）───────────────────────────────────────
+# _enforce_grayscale 和 _inject_grayscale 已移除
 
 # ── REST API v1 ─────────────────────────────────────────────
 from api_v1 import api_v1, _ADMIN_TOKEN
