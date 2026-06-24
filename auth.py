@@ -227,6 +227,7 @@ def register_auth_routes(app):
                 'username': username,
                 'display_name': display_name,
                 'role': role,
+                'auth_source': session.get('auth_source', 'legacy'),
             }
         })
 

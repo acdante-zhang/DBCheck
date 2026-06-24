@@ -204,7 +204,9 @@ class MonitorEngine:
     # ═══════════════════════════════════════════════════════════
 
     def _collect_slow(self, instance_id, db_type, label):
-        sql = mq.SLOW_QUERY_TEMPLATES.get(db_type)
+        # 归一化 db_type：oracle_full/oracle_rac → oracle
+        norm_type = db_type.replace('_full', '').replace('_rac', '') if db_type else ''
+        sql = mq.SLOW_QUERY_TEMPLATES.get(norm_type)
         if not sql:
             return {'data': [], 'error': f'不支持的类型: {db_type}',
                     'ts': time.time(), 'db_type': db_type, 'label': label}
@@ -213,7 +215,7 @@ class MonitorEngine:
             rows = self._connect_and_query(instance_id, sql)
         except Exception as e:
             # 尝试 fallback SQL
-            fallback_sql = mq.SLOW_QUERY_FALLBACK_TEMPLATES.get(db_type)
+            fallback_sql = mq.SLOW_QUERY_FALLBACK_TEMPLATES.get(norm_type)
             if fallback_sql:
                 try:
                     rows = self._connect_and_query(instance_id, fallback_sql)
@@ -235,7 +237,9 @@ class MonitorEngine:
         return result
 
     def _collect_conn(self, instance_id, db_type, label):
-        conn_sql = mq.CONNECTION_TEMPLATES.get(db_type)
+        # 归一化 db_type
+        norm_type = db_type.replace('_full', '').replace('_rac', '') if db_type else ''
+        conn_sql = mq.CONNECTION_TEMPLATES.get(norm_type)
         if not conn_sql:
             return {'data': [], 'error': f'不支持的类型: {db_type}',
                     'ts': time.time(), 'total': 0, 'max_conn': 0,
@@ -247,13 +251,13 @@ class MonitorEngine:
         except Exception as e:
             print(f"[Monitor] 连接 SQL 失败 {label}: {e}", flush=True)
             return {'data': [], 'error': f'连接SQL失败: {e}',
-                    'ts': time.time(), 'total': 0, 'max_conn': mq.MAX_CONNECTION_DEFAULTS.get(db_type, 100),
+                    'ts': time.time(), 'total': 0, 'max_conn': mq.MAX_CONNECTION_DEFAULTS.get(norm_type, 100),
                     'connections': {'active': 0, 'idle': 0, 'blocked': 0}, 'usage_pct': 0,
                     'db_type': db_type, 'label': label}
 
         # 获取最大连接数
-        max_sql = mq.MAX_CONN_QUERY_SQL.get(db_type)
-        max_conn = mq.MAX_CONNECTION_DEFAULTS.get(db_type, 100)
+        max_sql = mq.MAX_CONN_QUERY_SQL.get(norm_type)
+        max_conn = mq.MAX_CONNECTION_DEFAULTS.get(norm_type, 100)
         if max_sql:
             try:
                 max_rows = self._connect_and_query(instance_id, max_sql)

@@ -5840,7 +5840,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <span style="font-size:11px;color:var(--text-muted);">秒</span>
         </div>
         <div style="flex:1;overflow-y:auto;padding:12px 16px;">
-          <div id="hm-card-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px;"></div>
+          <div id="hm-card-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;"></div>
           <div id="hm-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--text-muted);">
             <div style="font-size:48px;margin-bottom:12px;">💚</div>
             <div style="font-size:16px;font-weight:600;">选择数据源开始健康监控</div>
@@ -17374,7 +17374,8 @@ function mkdirRemote() {
   // ── 各卡片渲染 ──
 
   function hmCardWrap(title, icon, body, cardClass) {
-    return `<div class="hm-card ${cardClass||''}">
+    var style = (cardClass === 'large') ? ' style="grid-column:span 2;"' : '';
+    return `<div class="hm-card ${cardClass||''}"${style}>
       <div class="hm-card-header"><span class="hm-card-icon">${icon||'📋'}</span><span class="hm-card-title">${title}</span></div>
       <div class="hm-card-body">${body}</div></div>`;
   }
@@ -17438,12 +17439,12 @@ function mkdirRemote() {
     if (d.dest_details) {
       body += `<div class="hm-stat" style="font-size:11px;"><span>归档目的地</span><b style="font-weight:normal;word-break:break-all;">${d.dest_details}</b></div>`;
     }
-    return hmCardWrap('ADG 同步状态', '🔄', body);
+    return hmCardWrap('ADG 同步状态', '🔄', body, 'large');
   }
 
   function hmRenderBackupCard(data) {
     const rows = Array.isArray(data) ? data : [];
-    if (!rows.length) return hmCardWrap('备份状态', '💿', '<div style="color:var(--text-muted);">无最近备份记录</div>');
+    if (!rows.length) return hmCardWrap('备份状态', '💿', '<div style="color:var(--text-muted);">无最近备份记录</div>', 'large');
     return hmCardWrap('备份状态', '💿', hmMiniTable(rows.slice(0,7), [
       {key:'backup_time',label:'备份时间'}, {key:'status',label:'状态'},
       {key:'input_type',label:'类型'}, {key:'size_gb',label:'大小(GB)'},
@@ -17778,7 +17779,16 @@ function mkdirRemote() {
     var moved = _dbCards.splice(fromIdx, 1)[0];
     _dbCards.splice(toIdx, 0, moved);
     _dbDragId = null;
-    dbRenderCards();
+    // 只重新排序 DOM，不重新渲染数据（保留已有数据不闪烁）
+    var grid = document.getElementById('db-grid');
+    if (!grid) return;
+    var cards = Array.from(grid.children);
+    cards.sort(function(a, b) {
+      var aIdx = _dbCards.findIndex(function(c) { return c.id === a.id.replace('db-card-', ''); });
+      var bIdx = _dbCards.findIndex(function(c) { return c.id === b.id.replace('db-card-', ''); });
+      return aIdx - bIdx;
+    });
+    cards.forEach(function(card) { grid.appendChild(card); });
   }
 
   function dbEditCardTitle(cardId) {
@@ -17795,11 +17805,13 @@ function mkdirRemote() {
       if (newTitle && newTitle.trim()) {
         card.title = newTitle.trim();
       }
-      dbRenderCards();
+      // 只更新标题文本，不重建DOM
+      var titleSpan = document.getElementById('db-card-title-' + cardId);
+      if (titleSpan) titleSpan.textContent = card.title;
     };
     if (input) {
       input.onblur = saveFn;
-      input.onkeydown = function(e) { if (e.key === 'Enter') saveFn(); if (e.key === 'Escape') dbRenderCards(); };
+      input.onkeydown = function(e) { if (e.key === 'Enter') saveFn(); if (e.key === 'Escape') { var ts = document.getElementById('db-card-title-' + cardId); if (ts) ts.textContent = card.title; } };
     }
   }
 

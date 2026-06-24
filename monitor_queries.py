@@ -128,36 +128,54 @@ LIMIT 50
 # Oracle
 # ═══════════════════════════════════════════════════════════════
 ORACLE_SLOW_QUERY_SQL = """
-SELECT
-    SUBSTR(s.sql_text, 1, 200) AS sql_text,
-    ROUND(s.elapsed_time / 1000000, 3) AS avg_time_s,
-    ROUND(s.elapsed_time / 1000000, 3) AS max_time_s,
-    s.executions AS exec_count,
-    ROUND(s.elapsed_time / 1000000, 3) AS total_time_s,
-    s.parsing_schema_name AS schema_name,
-    s.sql_id AS digest
-FROM v$sql s
-WHERE s.parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'OUTLN')
-  AND s.module != 'DBMS_SCHEDULER'
-ORDER BY s.elapsed_time DESC
-FETCH FIRST 30 ROWS ONLY
+SELECT * FROM (
+    SELECT
+        SUBSTR(s.sql_text, 1, 200) AS sql_text,
+        ROUND(s.elapsed_time / 1000000, 3) AS avg_time_s,
+        ROUND(s.elapsed_time / 1000000, 3) AS max_time_s,
+        s.executions AS exec_count,
+        ROUND(s.elapsed_time / 1000000, 3) AS total_time_s,
+        s.parsing_schema_name AS schema_name,
+        s.sql_id AS digest
+    FROM v$sql s
+    WHERE s.parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'OUTLN')
+      AND s.module != 'DBMS_SCHEDULER'
+    ORDER BY s.elapsed_time DESC
+) WHERE ROWNUM <= 30
+"""
+
+ORACLE_SLOW_QUERY_FALLBACK_SQL = """
+SELECT * FROM (
+    SELECT
+        SUBSTR(s.sql_text, 1, 200) AS sql_text,
+        ROUND(s.elapsed_time / 1000000, 3) AS avg_time_s,
+        ROUND(s.elapsed_time / 1000000, 3) AS max_time_s,
+        s.executions AS exec_count,
+        ROUND(s.elapsed_time / 1000000, 3) AS total_time_s,
+        s.parsing_schema_name AS schema_name,
+        s.sql_id AS digest
+    FROM v$sqlarea s
+    WHERE s.parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'OUTLN')
+    ORDER BY s.elapsed_time DESC
+) WHERE ROWNUM <= 30
 """
 
 ORACLE_CONNECTION_SQL = """
-SELECT
-    s.username AS username,
-    s.schema_name AS database_name,
-    s.program AS command,
-    ROUND((SYSDATE - s.logon_time) * 24, 1) AS duration_h,
-    s.status AS state,
-    SUBSTR(q.sql_text, 1, 200) AS current_sql,
-    (SELECT COUNT(*) FROM v$session WHERE username = s.username) AS user_conn_count,
-    (SELECT COUNT(*) FROM v$session) AS total_connections
-FROM v$session s
-LEFT JOIN v$sql q ON s.sql_id = q.sql_id
-WHERE s.type != 'BACKGROUND'
-ORDER BY (SYSDATE - s.logon_time) DESC
-FETCH FIRST 50 ROWS ONLY
+SELECT * FROM (
+    SELECT
+        s.username AS username,
+        s.schemaname AS database_name,
+        s.program AS command,
+        ROUND((SYSDATE - s.logon_time) * 24, 1) AS duration_h,
+        s.status AS state,
+        SUBSTR(q.sql_text, 1, 200) AS current_sql,
+        (SELECT COUNT(*) FROM v$session WHERE username = s.username) AS user_conn_count,
+        (SELECT COUNT(*) FROM v$session) AS total_connections
+    FROM v$session s
+    LEFT JOIN v$sql q ON s.sql_id = q.sql_id
+    WHERE s.type != 'BACKGROUND'
+    ORDER BY (SYSDATE - s.logon_time) DESC
+) WHERE ROWNUM <= 50
 """
 
 # ═══════════════════════════════════════════════════════════════
@@ -309,6 +327,7 @@ SLOW_QUERY_FALLBACK_TEMPLATES = {
     'pg': PG_SLOW_QUERY_FALLBACK_SQL,
     'ivorysql': PG_SLOW_QUERY_FALLBACK_SQL,
     'tidb': TIDB_SLOW_QUERY_FALLBACK_SQL,
+    'oracle': ORACLE_SLOW_QUERY_FALLBACK_SQL,
 }
 
 CONNECTION_TEMPLATES = {
