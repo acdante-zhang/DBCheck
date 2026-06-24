@@ -6948,7 +6948,32 @@ async function loadShares() {
     const res = await fetch('/api/shares');
     const data = await res.json();
     if (!data.ok || !data.shares || data.shares.length === 0) {
-      listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:48px">暂无分享链接</div>';
+      listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:48px">暂无巡检分享链接</div>';
+    }
+    // 额外加载数据看板分享链接
+    var dashSharesHtml = '';
+    try {
+      var dr = await fetch('/api/dashboard/configs');
+      var dd = await dr.json();
+      if (dd.ok && dd.configs) {
+        var dashShares = dd.configs.filter(function(c) { return c.share_token; });
+        if (dashShares.length > 0) {
+          dashSharesHtml = '<div style="margin-top:24px;"><h3 style="font-size:14px;margin-bottom:12px;">📊 数据看板分享链接</h3>';
+          dashSharesHtml += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+          dashSharesHtml += '<thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:10px 12px;">看板名称</th><th style="text-align:left;padding:10px 12px;">分享链接</th><th style="text-align:center;padding:10px 12px;">操作</th></tr></thead><tbody>';
+          dashShares.forEach(function(c) {
+            var url = location.origin + '/dashboard/share/' + c.share_token;
+            dashSharesHtml += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:10px 12px;">📊 ' + escHtml(c.name) + '</td>';
+            dashSharesHtml += '<td style="padding:10px 12px;"><a href="' + url + '" target="_blank" style="color:#58a6ff;font-size:12px;">' + url + '</a></td>';
+            dashSharesHtml += '<td style="padding:10px 12px;text-align:center;"><button class="btn btn-ghost" style="font-size:12px;" onclick="navigator.clipboard.writeText(\'' + url + '\');toastSuccess(\'已复制\')">📋 复制</button></td></tr>';
+          });
+          dashSharesHtml += '</tbody></table></div>';
+        }
+      }
+    } catch(e) {}
+    if (!data.shares || data.shares.length === 0) {
+      if (dashSharesHtml) listEl.innerHTML = dashSharesHtml;
+      else listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:48px">暂无分享链接</div>';
       return;
     }
     const typeIcon = t => t === 'server_inspect' ? '🖥️' : '🗄️';
@@ -6981,6 +7006,8 @@ async function loadShares() {
           `).join('')}
         </tbody>
       </table>`;
+  // 追加看板分享链接
+  listEl.innerHTML += dashSharesHtml;
   } catch(e) {
     listEl.innerHTML = `<div style="text-align:center;color:var(--error);padding:32px">加载失败: ${escHtml(e.message)}</div>`;
   }
@@ -15687,7 +15714,7 @@ async function saveSysInfo() {
     if (d.ok) { document.getElementById('si-modal').remove(); loadAboutCustomInfo(); toastSuccess('系统信息已更新'); }
     else { toastError(d.error || '保存失败'); }
   } catch(e) { toastError('保存失败: ' + e.message); }
-})();
+}
 
   // ─── Slogan 动画循环 ───
   (function(){
@@ -17470,7 +17497,24 @@ function mkdirRemote() {
       h += '<tr>';
       keys.forEach(k => {
         var val = row[k] !== undefined ? row[k] : (row[k.toLowerCase()] !== undefined ? row[k.toLowerCase()] : '-');
-        h += `<td>${val}</td>`;
+        // 状态类字段颜色标识
+        var style = '';
+        var vstr = String(val).toLowerCase();
+        if (k === 'status' || k === 'state' || k === 'account_status' || k === 'database_status') {
+          var good = ['open','active','valid','ok','normal','read write','running'];
+          var bad = ['critical','error','failed','locked','expired','invalid','shutdown','blocked'];
+          var warn = ['warning','restricted','inactive','read only','suspended','recovering'];
+          if (good.some(function(x){return vstr===x;})) style = 'color:#52c41a;font-weight:bold;';
+          else if (bad.some(function(x){return vstr.indexOf(x)>-1;})) style = 'color:#f5222d;font-weight:bold;';
+          else if (warn.some(function(x){return vstr.indexOf(x)>-1;})) style = 'color:#faad14;font-weight:bold;';
+        }
+        if (k === 'usage_pct' || k === 'pct_used') {
+          var p = parseFloat(val) || 0;
+          if (p > 90) style = 'color:#f5222d;font-weight:bold;';
+          else if (p > 80) style = 'color:#faad14;font-weight:bold;';
+          else style = 'color:#52c41a;';
+        }
+        h += `<td style="${style}">${val}</td>`;
       });
       h += '</tr>';
     });
@@ -17548,10 +17592,14 @@ function mkdirRemote() {
     const showRows = rows.slice(0, 15);
     showRows.forEach(d => {
       const stColor = d.status==='CRITICAL' ? '#f5222d' : d.status==='WARNING' ? '#faad14' : '#52c41a';
+      const pct = parseFloat(d.usage_pct) || 0;
+      const pctColor = pct > 90 ? '#f5222d' : pct > 80 ? '#faad14' : '#52c41a';
       body += `<div style="margin-bottom:6px;">
-        <div style="display:flex;justify-content:space-between;font-size:12px;">
-          <span style="color:${stColor}">● ${d.tablespace_name}</span>
-          <span style="color:${stColor}">${d.used_gb}/${d.total_gb} GB (${d.datafile_count||0}文件)</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;gap:8px;">
+          <span style="color:${stColor};font-weight:${stColor==='#f5222d'?'bold':'normal'}">${d.tablespace_name}</span>
+          <span style="color:${pctColor};font-weight:bold;white-space:nowrap;">${pct}%</span>
+          <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${d.used_gb}/${d.total_gb}GB</span>
+          <span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">${d.datafile_count||0}文件</span></div>
         ${hmUsageBar(d.usage_pct)}
       </div>`;
     });

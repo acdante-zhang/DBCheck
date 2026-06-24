@@ -3656,6 +3656,7 @@ def api_health_monitor_data():
     """获取所有监控实例的健康数据"""
     try:
         from health_monitor_engine import get_health_monitor_engine
+        from health_monitor_queries import CARD_DISPLAY_CONFIG
         engine = get_health_monitor_engine()
         data = engine.get_health_data()
         result = []
@@ -3667,6 +3668,7 @@ def api_health_monitor_data():
                 'host': v.get('host', ''),
                 'port': v.get('port', ''),
                 'cards': v.get('cards', {}),
+                'card_config': CARD_DISPLAY_CONFIG,
                 'error': v.get('error'),
                 'ts': v.get('ts', 0),
             }
@@ -3681,6 +3683,7 @@ def api_health_monitor_instance(instance_id):
     """获取单个实例的详细健康数据"""
     try:
         from health_monitor_engine import get_health_monitor_engine
+        from health_monitor_queries import CARD_DISPLAY_CONFIG
         engine = get_health_monitor_engine()
         data = engine.get_health_data(instance_id=instance_id)
         if not data:
