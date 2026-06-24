@@ -21,21 +21,27 @@ ORACLE_HEALTH_SQL = {
     'db_size': """
         SELECT
             (SELECT ROUND(SUM(bytes)/1073741824, 2) FROM dba_data_files) AS datafile_gb,
-            (SELECT ROUND(SUM(bytes)/1073741824, 2) FROM dba_segments) AS segment_gb,
-            (SELECT ROUND((SUM(a.bytes)+SUM(b.bytes))/1073741824, 2)
-             FROM dba_data_files a CROSS JOIN dba_segments b) AS total_gb
+            (SELECT ROUND(SUM(bytes)/1073741824, 2) FROM dba_segments) AS segment_gb
         FROM dual
     """,
 
     'adg_status': """
-        SELECT database_role, protection_mode, protection_level,
-               open_mode, switchover_status,
+        SELECT d.database_role, d.protection_mode, d.protection_level,
+               d.open_mode, d.switchover_status,
                (SELECT COUNT(*) FROM v$archive_dest_status
                 WHERE type='PHYSICAL' AND status='VALID') AS standby_count,
-               (SELECT NVL(MAX(ROUND((SYSDATE-applied_time)*24*60,1)),0)
+               (SELECT NVL(MAX(ROUND(
+                   (SYSDATE - TO_DATE(SUBSTR(TO_CHAR(time_computed),1,19),
+                    'YYYY-MM-DD HH24:MI:SS')) * 24 * 60, 1)), 0)
+                FROM v$dataguard_stats
+                WHERE name = 'apply lag'
+                  AND time_computed IS NOT NULL
+                  AND ROWNUM = 1) AS max_apply_lag_min,
+               (SELECT LISTAGG(dest_id || ':' || status, ', ')
+                WITHIN GROUP (ORDER BY dest_id)
                 FROM v$archive_dest_status
-                WHERE type='PHYSICAL' AND applied_time IS NOT NULL) AS max_apply_lag_min
-        FROM v$database
+                WHERE type='PHYSICAL' AND status != 'INACTIVE') AS dest_details
+        FROM v$database d
     """,
 
     'backup_status': """
@@ -63,17 +69,25 @@ ORACLE_HEALTH_SQL = {
 
     'tablespace_usage': """
         SELECT t.tablespace_name,
-               ROUND(SUM(t.bytes)/1073741824,2) AS total_gb,
-               ROUND(SUM(t.bytes-NVL(f.bytes,0))/1073741824,2) AS used_gb,
-               ROUND((1-SUM(NVL(f.bytes,0))/NULLIF(SUM(t.bytes),0))*100,1) AS usage_pct,
-               CASE WHEN (1-SUM(NVL(f.bytes,0))/NULLIF(SUM(t.bytes),0))*100 > 90
+               ROUND(GREATEST(NVL(SUM(df.bytes),0), NVL(SUM(df.maxbytes),0))/1073741824,2) AS total_gb,
+               ROUND((NVL(SUM(df.bytes),0) - NVL(SUM(fs.bytes),0))/1073741824,2) AS used_gb,
+               ROUND((NVL(SUM(df.bytes),0) - NVL(SUM(fs.bytes),0)) /
+                     NULLIF(GREATEST(NVL(SUM(df.bytes),0), NVL(SUM(df.maxbytes),0)), 0) * 100, 1) AS usage_pct,
+               COUNT(df.file_name) AS datafile_count,
+               CASE WHEN (NVL(SUM(df.bytes),0) - NVL(SUM(fs.bytes),0)) /
+                        NULLIF(GREATEST(NVL(SUM(df.bytes),0), NVL(SUM(df.maxbytes),0)), 0) * 100 > 90
                     THEN 'CRITICAL'
-                    WHEN (1-SUM(NVL(f.bytes,0))/NULLIF(SUM(t.bytes),0))*100 > 80
+                    WHEN (NVL(SUM(df.bytes),0) - NVL(SUM(fs.bytes),0)) /
+                        NULLIF(GREATEST(NVL(SUM(df.bytes),0), NVL(SUM(df.maxbytes),0)), 0) * 100 > 80
                     THEN 'WARNING'
                     ELSE 'OK' END AS status
-        FROM dba_data_files t
-        LEFT JOIN (SELECT tablespace_name, SUM(bytes) AS bytes FROM dba_free_space GROUP BY tablespace_name) f
-               ON t.tablespace_name = f.tablespace_name
+        FROM dba_tablespaces t
+        LEFT JOIN dba_data_files df
+               ON df.tablespace_name = t.tablespace_name
+        LEFT JOIN (SELECT tablespace_name, SUM(bytes) AS bytes
+                   FROM dba_free_space GROUP BY tablespace_name) fs
+               ON fs.tablespace_name = t.tablespace_name
+        WHERE t.contents = 'PERMANENT'
         GROUP BY t.tablespace_name
         ORDER BY usage_pct DESC
     """,

@@ -14,6 +14,7 @@
   --surface:   #161b22;
   --surface2:  #1c2330;
   --border:    #30363d;
+  --primary:   #2ea043;
   --accent:    #2ea043;
   --accent2:   #388bfd;
   --warn:      #e3b341;
@@ -33,6 +34,7 @@
   --surface:   #ffffff;
   --surface2:  #f0f2f5;
   --border:    #d0d7de;
+  --primary:   #1a7f37;
   --accent:    #1a7f37;
   --accent2:   #0969da;
   --warn:      #9a6700;
@@ -1896,13 +1898,16 @@ async function executeFixSql(taskId, sql) {
 .main-content {
   min-width: 0;
   padding-bottom: 32px;
-  /* 右侧留出 AI 面板空间 */
+  transition: margin-right 0.3s ease;
+}
+
+.main-content.ai-open {
   margin-right: 420px;
 }
 
 .ai-chat-panel {
   position: fixed;
-  right: 0;
+  right: -420px;
   top: 0;
   bottom: 0;
   width: 420px;
@@ -1912,45 +1917,39 @@ async function executeFixSql(taskId, sql) {
   flex-direction: column;
   overflow: hidden;
   z-index: 9999;
+  transition: right 0.3s ease;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.15);
 }
 
-/* 小屏幕：AI 面板可滑出 */
+.ai-chat-panel.open { right: 0; }
+
+/* 小屏幕：主面板不留 margin */
 @media (max-width: 1100px) {
-  .main-content { margin-right: 0; }
-  .ai-chat-panel {
-    right: -420px;
-    transition: right 0.3s ease;
-    box-shadow: -4px 0 20px rgba(0,0,0,0.3);
-  }
-  .ai-chat-panel.open { right: 0; }
+  .main-content { margin-right: 0 !important; }
+  .main-content.ai-open { margin-right: 0 !important; }
 }
 
-/* 小屏幕浮动按钮 */
+/* AI 浮动按钮（桌面端+小屏幕均显示） */
 #ai-chat-fab {
-  display: none;
+  display: flex;
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4caf50, #2196f3);
+  border: none;
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  z-index: 9998;
+  box-shadow: 0 4px 16px rgba(46,160,67,0.4);
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
 }
-@media (max-width: 1100px) {
-  #ai-chat-fab {
-    display: flex;
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #4caf50, #2196f3);
-    border: none;
-    color: #fff;
-    font-size: 24px;
-    cursor: pointer;
-    z-index: 9998;
-    box-shadow: 0 4px 16px rgba(46,160,67,0.4);
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s ease;
-  }
-  #ai-chat-fab:hover { transform: scale(1.1); }
-}
+#ai-chat-fab:hover { transform: scale(1.1); }
 
 /* ─── 聊天头部 */
 .chat-header {
@@ -5860,6 +5859,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <input type="text" id="db-config-name" placeholder="看板名称" style="width:150px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:13px;" value="默认看板">
           <button onclick="dbSaveConfig()" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--primary);color:#fff;cursor:pointer;font-size:13px;">💾 保存</button>
           <button onclick="dbAddCard()" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:13px;">+ 添加卡片</button>
+          <button onclick="dbShareConfig()" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:13px;">🔗 只读分享</button>
           <span style="margin-left:auto;"></span>
           <button onclick="dbRefreshAll()" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:13px;">🔄 刷新</button>
           <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
@@ -6671,6 +6671,18 @@ async function executeFixSql(taskId, sql) {
 function showPage(name) {
   // v2.6.2：更新全局页面变量（供 AI 上下文感知使用）
   _currentPage = name;
+  // RBAC 权限校验：非admin用户不能访问admin_only页面
+  var navId = 'nav-' + name;
+  var perm = NAV_MENU_PERM[navId];
+  if (perm === 'admin_only') {
+    var usr = window._currentUser || {};
+    var isAdmin = usr.role === 'admin' || usr.auth_source === 'legacy';
+    if (!isAdmin) {
+      toastError('权限不足，该功能仅管理员可用');
+      showPage('home');
+      return;
+    }
+  }
   // 强制隐藏所有 .page 元素（不依赖 CSS 类）
   document.querySelectorAll('.page').forEach(function(p) {
     p.classList.remove('active');
@@ -11841,6 +11853,36 @@ function doPromptResolve(id) {
 
 // ─── Auth (Login / User Center) ─────────────────
 
+// nav-item id → 菜单分类映射（admin全可见，非admin按分类控制）
+// admin_only: 仅管理员可见；basic: 所有登录用户可见
+const NAV_MENU_PERM = {
+  'nav-home': 'basic', 'nav-wizard': 'basic', 'nav-server-inspect': 'basic',
+  'nav-scheduler': 'basic', 'nav-awr': 'basic', 'nav-reports': 'basic',
+  'nav-server-history': 'basic', 'nav-trend': 'basic', 'nav-datasources': 'basic',
+  'nav-inspection-config': 'admin_only', 'nav-baseline-config': 'admin_only',
+  'nav-server-thresholds': 'admin_only', 'nav-rules': 'admin_only', 'nav-rag': 'admin_only',
+  'nav-plugin-market': 'admin_only', 'nav-sql-editor': 'basic', 'nav-remote-shell': 'admin_only',
+  'nav-monitor-slow': 'basic', 'nav-monitor-conn': 'basic', 'nav-health-monitor': 'basic',
+  'nav-dashboard': 'basic', 'nav-ai': 'admin_only', 'nav-oracle-client': 'admin_only',
+  'nav-notifier': 'admin_only', 'nav-apikey': 'admin_only', 'nav-shares': 'admin_only',
+  'nav-license': 'admin_only', 'nav-data-management': 'admin_only', 'nav-um-admin': 'admin_only',
+  'nav-about': 'basic',
+};
+
+function applyMenuPermissions(user) {
+  var isAdmin = !user || user.role === 'admin' || user.auth_source === 'legacy';
+  document.querySelectorAll('.nav-item').forEach(function(item) {
+    var navId = item.id || '';
+    var perm = NAV_MENU_PERM[navId];
+    if (!perm) { item.style.display = ''; return; }
+    if (perm === 'admin_only' && !isAdmin) {
+      item.style.display = 'none';
+    } else {
+      item.style.display = '';
+    }
+  });
+}
+
 async function checkLogin() {
   try {
     var r = await fetch('/api/auth/status');
@@ -11852,6 +11894,7 @@ async function checkLogin() {
     var ue = document.getElementById('topbar-user');
     ue.style.display = '';
     document.getElementById('topbar-user-name').textContent = d.user.display_name || d.user.username;
+    applyMenuPermissions(d.user);
   } catch(e) { showLogin(); }
 }
 
@@ -11895,6 +11938,7 @@ async function doLogin() {
       var ue = document.getElementById('topbar-user');
       ue.style.display = '';
       document.getElementById('topbar-user-name').textContent = d.user.display_name || d.user.username;
+      applyMenuPermissions(d.user);
     } else {
       err.textContent = i18n(d.error) || i18n('webui.login_error');
       err.style.display = '';
@@ -12389,16 +12433,20 @@ function renderMarkdown(text) {
 // 全局变量：由 showPage() 更新
 let _currentPage = 'dashboard';
 
-// 小屏幕：切换 AI 面板显示/隐藏
+// 切换 AI 面板显示/隐藏（桌面端+小屏幕通用）
 function toggleAiChatPanel() {
   const panel = document.getElementById('ai-chat-sidebar');
   const fab = document.getElementById('ai-chat-fab');
+  const mainContent = document.querySelector('.main-content');
   const isOpen = panel.classList.contains('open');
   panel.classList.toggle('open');
-  if (fab) fab.style.display = isOpen ? 'flex' : 'none';
-  // 小屏幕时显示/隐藏面板内的关闭按钮
+  if (mainContent) {
+    if (!isOpen) mainContent.classList.add('ai-open');
+    else mainContent.classList.remove('ai-open');
+  }
+  // 面板内的关闭按钮始终显示
   const closeBtn = panel.querySelector('.chat-panel-close');
-  if (closeBtn) closeBtn.style.display = isOpen ? 'none' : 'inline-block';
+  if (closeBtn) closeBtn.style.display = 'inline-block';
 }
 
 function getChatContext() {
@@ -14194,6 +14242,15 @@ async function deleteBackupHistory(recordId) {
 
     var html = '';
     data.forEach(function(item, i) {
+      // 连接失败的条目单独显示错误
+      if (item.error && !item.sql_text && !item.query_text) {
+        html += '<tr style="background:rgba(245,34,45,0.06)">'
+          + '<td>' + (i + 1) + '</td>'
+          + '<td style="white-space:nowrap">' + dbTypeTag(item.source) + ' <span style="font-size:12px">' + escHtml(item.source) + '</span></td>'
+          + '<td colspan="7" style="color:#f5222d;font-size:12px;">⚠️ 连接失败: ' + escHtml(item.error) + '</td>'
+          + '</tr>';
+        return;
+      }
       var avg = parseFloat(item.avg_time_s) || 0;
       var maxT = parseFloat(item.max_time_s) || 0;
       var totalT = parseFloat(item.total_time_s) || 0;
@@ -14295,7 +14352,7 @@ async function deleteBackupHistory(recordId) {
       }
 
       // 找最长空闲会话（按 duration_h）
-      var sessions = (inst.data && inst.data.data) ? inst.data.data : [];
+      var sessions = inst.sessions || (inst.data && inst.data.data) || [];
       sessions.forEach(function(s) {
         var state = (s.state || '').toLowerCase();
         var dur = parseFloat(s.duration_h) || 0;
@@ -17340,16 +17397,20 @@ function mkdirRemote() {
     let body = '';
     if (d.datafile_gb !== undefined) body += `<div class="hm-stat"><span>数据文件</span><b>${d.datafile_gb} GB</b></div>`;
     if (d.segment_gb !== undefined) body += `<div class="hm-stat"><span>段大小</span><b>${d.segment_gb} GB</b></div>`;
-    if (d.total_gb !== undefined) body += `<div class="hm-stat" style="font-size:16px;"><span>总大小</span><b style="color:#0f3460;">${d.total_gb} GB</b></div>`;
     return hmCardWrap('数据库总大小', '💾', body);
   }
 
   function hmRenderAdgCard(data) {
     const d = Array.isArray(data) ? data[0] : data;
     if (!d) return '';
-    let body = `<div class="hm-stat"><span>角色</span><b>${d.database_role||'-'}</b></div>
+    const lagColor = (d.max_apply_lag_min||0) > 5 ? '#f5222d' : (d.max_apply_lag_min||0) > 1 ? '#faad14' : '#52c41a';
+    let body = `<div class="hm-stat"><span>角色</span><b style="color:${d.database_role==='PRIMARY'?'#52c41a':d.database_role==='PHYSICAL STANDBY'?'#faad14':'inherit'}">${d.database_role||'-'}</b></div>
+      <div class="hm-stat"><span>保护模式</span><b>${d.protection_mode||'-'}</b></div>
       <div class="hm-stat"><span>备库数</span><b>${d.standby_count||0}</b></div>
-      <div class="hm-stat"><span>最大延迟</span><b style="color:${(d.max_apply_lag_min||0)>5?'#f5222d':'#52c41a'}">${d.max_apply_lag_min||0} 分钟</b></div>`;
+      <div class="hm-stat"><span>最大延迟</span><b style="color:${lagColor}">${d.max_apply_lag_min||0} 分钟</b></div>`;
+    if (d.dest_details) {
+      body += `<div class="hm-stat" style="font-size:11px;"><span>归档目的地</span><b style="font-weight:normal;word-break:break-all;">${d.dest_details}</b></div>`;
+    }
     return hmCardWrap('ADG 同步状态', '🔄', body);
   }
 
@@ -17379,10 +17440,11 @@ function mkdirRemote() {
     let body = '';
     const showRows = rows.slice(0, 15);
     showRows.forEach(d => {
+      const stColor = d.status==='CRITICAL' ? '#f5222d' : d.status==='WARNING' ? '#faad14' : '#52c41a';
       body += `<div style="margin-bottom:6px;">
         <div style="display:flex;justify-content:space-between;font-size:12px;">
-          <span>${d.tablespace_name}</span>
-          <span style="color:${d.status==='CRITICAL'?'#f5222d':d.status==='WARNING'?'#faad14':'inherit'}">${d.used_gb}/${d.total_gb} GB</span></div>
+          <span style="color:${stColor}">● ${d.tablespace_name}</span>
+          <span style="color:${stColor}">${d.used_gb}/${d.total_gb} GB (${d.datafile_count||0}文件)</span></div>
         ${hmUsageBar(d.usage_pct)}
       </div>`;
     });
@@ -17540,6 +17602,28 @@ function mkdirRemote() {
     } catch(e) { dbShowToast('保存失败: ' + e.message, 'error'); }
   }
 
+  async function dbShareConfig() {
+    if (!_dbConfigId) { dbShowToast('请先保存看板', 'error'); return; }
+    var ipWhitelist = prompt('请输入允许访问的IP白名单（逗号分隔，*表示不限）：', '*');
+    if (ipWhitelist === null) return;
+    try {
+      const r = await fetch('/api/dashboard/share/generate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ config_id: _dbConfigId, ip_whitelist: ipWhitelist })
+      });
+      const d = await r.json();
+      if (d.ok) {
+        var fullUrl = location.origin + d.share_url;
+        var msg = '只读分享链接已生成：\n\n' + fullUrl + '\n\nIP白名单: ' + (ipWhitelist || '*');
+        prompt('复制分享链接：', fullUrl);
+        dbShowToast('分享链接已生成');
+      } else {
+        dbShowToast(d.error || '生成失败', 'error');
+      }
+    } catch(e) { dbShowToast('生成失败: ' + e.message, 'error'); }
+  }
+
   function dbAddCard() {
     const dsOptions = _dbDsCache.map(ds =>
       `<option value="${ds.id}">${ds.name || ds.host+':'+ds.port} (${ds.db_type||''})</option>`
@@ -17611,6 +17695,28 @@ function mkdirRemote() {
     dbRenderCards();
   }
 
+  function dbEditCardTitle(cardId) {
+    var card = _dbCards.find(c => c.id === cardId);
+    if (!card) return;
+    var titleEl = document.getElementById('db-card-title-' + cardId);
+    if (!titleEl) return;
+    var oldTitle = card.title;
+    titleEl.innerHTML = '<input type="text" value="' + oldTitle.replace(/"/g, '&quot;') + '" style="font-weight:600;font-size:13px;width:160px;padding:2px 6px;border:1px solid var(--accent);border-radius:4px;background:var(--surface);color:var(--text);" id="db-title-input-' + cardId + '">';
+    var input = document.getElementById('db-title-input-' + cardId);
+    if (input) { input.focus(); input.select(); }
+    var saveFn = function() {
+      var newTitle = (document.getElementById('db-title-input-' + cardId) || {}).value;
+      if (newTitle && newTitle.trim()) {
+        card.title = newTitle.trim();
+      }
+      dbRenderCards();
+    };
+    if (input) {
+      input.onblur = saveFn;
+      input.onkeydown = function(e) { if (e.key === 'Enter') saveFn(); if (e.key === 'Escape') dbRenderCards(); };
+    }
+  }
+
   function dbRenderCards() {
     const container = document.getElementById('db-cards-container');
     const empty = document.getElementById('db-empty');
@@ -17628,10 +17734,11 @@ function mkdirRemote() {
       const dsLabel = ds ? (ds.name || ds.host+':'+ds.port) : card.datasource_id;
       html += `<div class="db-card" id="db-card-${card.id}" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--border);">
-          <span style="font-weight:600;font-size:13px;">${card.title}</span>
+          <span id="db-card-title-${card.id}" style="font-weight:600;font-size:13px;cursor:pointer;" ondblclick="dbEditCardTitle('${card.id}')" title="双击编辑标题">${card.title}</span>
           <div style="display:flex;gap:4px;align-items:center;">
             <span style="font-size:10px;color:var(--text-muted);background:var(--surface);padding:2px 6px;border-radius:4px;">${dsLabel}</span>
             <span style="font-size:10px;color:var(--text-muted);">${card.type==='custom_sql'?'SQL':card.monitor_item||''}</span>
+            <button onclick="dbEditCardTitle('${card.id}')" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--text-muted);padding:0 4px;" title="编辑标题">✏️</button>
             <button onclick="dbDeleteCard('${card.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);padding:0 4px;" title="删除">✕</button>
           </div>
         </div>

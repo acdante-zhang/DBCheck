@@ -371,9 +371,16 @@ class MonitorEngine:
                 client_encoding='UTF8', connect_timeout=timeout,
             )
 
-        elif db_type == 'oracle':
+        elif db_type in ('oracle', 'oracle_full', 'oracle_rac'):
             import oracledb
-            dsn = inst.get('service_name') or f"{host}:{port}/orcl"
+            service = inst.get('service_name', '').strip()
+            sid = inst.get('sid', '').strip()
+            if service:
+                dsn = f"{host}:{port}/{service}"
+            elif sid:
+                dsn = oracledb.makedsn(host, port, sid=sid)
+            else:
+                dsn = f"{host}:{port}/orcl"
             mode = oracledb.SYSDBA if inst.get('sysdba') else oracledb.DEFAULT_MODE
             return oracledb.connect(user=user, password=password, dsn=dsn, mode=mode)
 

@@ -3409,7 +3409,19 @@ def api_monitor_slow_queries():
         # 转换为列表格式方便前端展示
         items = []
         for iid, d in data.items():
-            for row in d.get('data', []):
+            rows = d.get('data', [])
+            if rows:
+                for row in rows:
+                    items.append({
+                        'instance_id': iid,
+                        'source': d.get('label', iid),
+                        'label': d.get('label', iid),
+                        'db_type': d.get('db_type', ''),
+                        'error': d.get('error'),
+                        'ts': d.get('ts', 0),
+                        **row,
+                    })
+            elif d.get('error'):
                 items.append({
                     'instance_id': iid,
                     'source': d.get('label', iid),
@@ -3417,7 +3429,7 @@ def api_monitor_slow_queries():
                     'db_type': d.get('db_type', ''),
                     'error': d.get('error'),
                     'ts': d.get('ts', 0),
-                    **row,
+                    'sql_text': '',
                 })
         return jsonify({'ok': True, 'items': items, 'status': engine.get_status()})
     except Exception as e:
@@ -4343,6 +4355,15 @@ def _get_dashboard_db():
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )''')
+    # 兼容性升级：添加分享相关字段
+    try:
+        conn.execute("ALTER TABLE dashboard_config ADD COLUMN share_token TEXT DEFAULT ''")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE dashboard_config ADD COLUMN ip_whitelist TEXT DEFAULT ''")
+    except Exception:
+        pass
     conn.commit()
     return conn
 
@@ -4364,6 +4385,8 @@ def api_dashboard_configs():
                 'cards': _json.loads(c['cards_json']),
                 'created_at': c['created_at'],
                 'updated_at': c['updated_at'],
+                'share_token': c['share_token'] if 'share_token' in c.keys() else '',
+                'ip_whitelist': c['ip_whitelist'] if 'ip_whitelist' in c.keys() else '',
             })
         return jsonify({'ok': True, 'configs': result})
     except Exception as e:
@@ -4378,6 +4401,8 @@ def api_dashboard_config_save():
         config_id = data.get('id', '')
         name = data.get('name', '默认看板')
         cards = data.get('cards', [])
+        share_token = data.get('share_token', '')
+        ip_whitelist = data.get('ip_whitelist', '')
         now = datetime.datetime.now().isoformat()
 
         conn = _get_dashboard_db()
@@ -4388,21 +4413,21 @@ def api_dashboard_config_save():
             ).fetchone()
             if existing:
                 conn.execute(
-                    'UPDATE dashboard_config SET name=?, cards_json=?, updated_at=? WHERE id=?',
-                    (name, _json.dumps(cards), now, config_id)
+                    'UPDATE dashboard_config SET name=?, cards_json=?, updated_at=?, share_token=?, ip_whitelist=? WHERE id=?',
+                    (name, _json.dumps(cards), now, share_token, ip_whitelist, config_id)
                 )
             else:
                 conn.execute(
-                    'INSERT INTO dashboard_config (id, name, cards_json, created_at, updated_at) VALUES (?,?,?,?,?)',
-                    (config_id, name, _json.dumps(cards), now, now)
+                    'INSERT INTO dashboard_config (id, name, cards_json, created_at, updated_at, share_token, ip_whitelist) VALUES (?,?,?,?,?,?,?)',
+                    (config_id, name, _json.dumps(cards), now, now, share_token, ip_whitelist)
                 )
         else:
             # 新建
             import uuid
             config_id = str(uuid.uuid4())[:12]
             conn.execute(
-                'INSERT INTO dashboard_config (id, name, cards_json, created_at, updated_at) VALUES (?,?,?,?,?)',
-                (config_id, name, _json.dumps(cards), now, now)
+                'INSERT INTO dashboard_config (id, name, cards_json, created_at, updated_at, share_token, ip_whitelist) VALUES (?,?,?,?,?,?,?)',
+                (config_id, name, _json.dumps(cards), now, now, share_token, ip_whitelist)
             )
         conn.commit()
         conn.close()
@@ -4422,6 +4447,160 @@ def api_dashboard_config_delete(config_id):
         return jsonify({'ok': True, 'msg': '已删除'})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/dashboard/share/generate', methods=['POST'])
+def api_dashboard_share_generate():
+    """生成只读分享链接"""
+    try:
+        data = request.get_json() or {}
+        config_id = data.get('config_id', '')
+        ip_whitelist = data.get('ip_whitelist', '')
+        if not config_id:
+            return jsonify({'ok': False, 'error': '缺少看板ID'}), 400
+        import uuid as _uuid
+        share_token = str(_uuid.uuid4()).replace('-', '')[:24]
+        conn = _get_dashboard_db()
+        conn.execute(
+            'UPDATE dashboard_config SET share_token=?, ip_whitelist=? WHERE id=?',
+            (share_token, ip_whitelist, config_id)
+        )
+        conn.commit()
+        conn.close()
+        share_url = f"/dashboard/share/{share_token}"
+        return jsonify({'ok': True, 'share_token': share_token, 'share_url': share_url})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/dashboard/share/<token>', methods=['GET'])
+def api_dashboard_share_view(token):
+    """只读访问看板（验证IP白名单）"""
+    try:
+        conn = _get_dashboard_db()
+        row = conn.execute(
+            'SELECT * FROM dashboard_config WHERE share_token=?', (token,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'ok': False, 'error': '分享链接无效或已失效'}), 404
+
+        # IP 白名单校验
+        ip_whitelist = row['ip_whitelist'] if 'ip_whitelist' in row.keys() else ''
+        if ip_whitelist:
+            client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', '')
+            if not client_ip:
+                client_ip = request.environ.get('REMOTE_ADDR', '')
+            client_ip = client_ip.split(',')[0].strip()
+            allowed_ips = [ip.strip() for ip in ip_whitelist.split(',') if ip.strip()]
+            ip_allowed = False
+            for allowed in allowed_ips:
+                if allowed == client_ip or allowed == '*':
+                    ip_allowed = True
+                    break
+            if not ip_allowed:
+                return jsonify({'ok': False, 'error': f'IP {client_ip} 不在白名单内'}), 403
+
+        cards = _json.loads(row['cards_json'])
+        return jsonify({
+            'ok': True,
+            'config': {
+                'id': row['id'],
+                'name': row['name'],
+                'cards': cards,
+            }
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/dashboard/share/<token>', methods=['GET'])
+def dashboard_share_page(token):
+    """只读看板页面"""
+    try:
+        conn = _get_dashboard_db()
+        row = conn.execute(
+            'SELECT * FROM dashboard_config WHERE share_token=?', (token,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return '<h2 style="text-align:center;padding:40px;">分享链接无效或已失效</h2>', 404
+        # IP 白名单校验
+        ip_whitelist = row['ip_whitelist'] if 'ip_whitelist' in row.keys() else ''
+        if ip_whitelist:
+            client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', '')
+            if not client_ip:
+                client_ip = request.environ.get('REMOTE_ADDR', '')
+            client_ip = client_ip.split(',')[0].strip()
+            allowed_ips = [ip.strip() for ip in ip_whitelist.split(',') if ip.strip()]
+            ip_allowed = any(allowed == client_ip or allowed == '*' for allowed in allowed_ips)
+            if not ip_allowed:
+                return f'<h2 style="text-align:center;padding:40px;color:#f85149;">IP {client_ip} 不在白名单内</h2>', 403
+
+        cards_json = row['cards_json'] if 'cards_json' in row.keys() else '[]'
+        config_name = row['name']
+        html = f'''<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>{config_name} - 只读看板</title>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ background:#0d1117; color:#e6edf3; font-family:sans-serif; padding:20px; }}
+.header {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }}
+.header h1 {{ font-size:18px; }}
+.badge {{ background:#1a7f37; color:#fff; padding:2px 10px; border-radius:12px; font-size:12px; }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:14px; }}
+.card {{ background:#161b22; border:1px solid #30363d; border-radius:10px; overflow:hidden; }}
+.card-title {{ padding:10px 14px; background:#1c2330; font-weight:600; font-size:13px; border-bottom:1px solid #30363d; }}
+.card-body {{ padding:12px 14px; min-height:80px; }}
+table {{ width:100%; border-collapse:collapse; font-size:12px; }}
+th,td {{ padding:6px 8px; border-bottom:1px solid #21262d; text-align:left; }}
+th {{ color:#8b949e; font-weight:500; }}
+.stat {{ display:flex; justify-content:space-between; padding:4px 0; }}
+.stat b {{ color:#f0f6fc; }}
+.loading {{ text-align:center; color:#8b949e; padding:20px; }}
+</style></head><body>
+<div class="header"><h1>📊 {config_name}</h1><span class="badge">只读分享</span></div>
+<div class="grid" id="cards-grid"><div class="loading">加载中...</div></div>
+<script>
+var TOKEN = '{token}';
+var CONFIG = {cards_json};
+async function loadData() {{
+  try {{
+    var r = await fetch('/api/dashboard/share/' + TOKEN);
+    var d = await r.json();
+    if (!d.ok) {{ document.getElementById('cards-grid').innerHTML = '<div class="loading">' + (d.error||'加载失败') + '</div>'; return; }}
+    var cards = d.config.cards || [];
+    if (!cards.length) {{ document.getElementById('cards-grid').innerHTML = '<div class="loading">暂无卡片</div>'; return; }}
+    var dr = await fetch('/api/dashboard/data', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{cards:cards}})}});
+    var dd = await dr.json();
+    var html = '';
+    cards.forEach(function(c) {{
+      var dataCard = dd.ok ? (dd.cards||[]).find(function(x) {{return x.id===c.id;}}) : null;
+      var body = '<div class="loading">无数据</div>';
+      if (dataCard && dataCard.error) body = '<div style="color:#f85149;padding:10px;">⚠️ '+dataCard.error+'</div>';
+      else if (dataCard && dataCard.data) {{
+        if (Array.isArray(dataCard.data) && dataCard.data.length) {{
+          var cols = Object.keys(dataCard.data[0]);
+          body = '<table><tr>'+cols.map(function(k){{return '<th>'+k+'</th>';}}).join('')+'</tr>';
+          dataCard.data.slice(0,20).forEach(function(row) {{
+            body += '<tr>'+cols.map(function(k){{return '<td>'+row[k]+'</td>';}}).join('')+'</tr>';
+          }});
+          body += '</table>';
+        }} else if (dataCard.data && typeof dataCard.data === 'object') {{
+          body = '<div>'; for (var k in dataCard.data) {{ body += '<div class="stat"><span>'+k+'</span><b>'+dataCard.data[k]+'</b></div>'; }} body += '</div>';
+        }}
+      }}
+      html += '<div class="card"><div class="card-title">'+c.title+'</div><div class="card-body">'+body+'</div></div>';
+    }});
+    document.getElementById('cards-grid').innerHTML = html;
+  }} catch(e) {{
+    document.getElementById('cards-grid').innerHTML = '<div class="loading">加载失败: '+e.message+'</div>';
+  }}
+}}
+loadData(); setInterval(loadData, 30000);
+</script></body></html>'''
+        return html
+    except Exception as e:
+        return f'<h2>错误: {e}</h2>', 500
 
 
 @app.route('/api/dashboard/data', methods=['POST'])
