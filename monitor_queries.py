@@ -178,6 +178,25 @@ SELECT * FROM (
 ) WHERE ROWNUM <= 50
 """
 
+# Oracle 11g fallback：v$session 没有 schemaname 列
+ORACLE_CONNECTION_FALLBACK_SQL = """
+SELECT * FROM (
+    SELECT
+        s.username AS username,
+        '' AS database_name,
+        s.program AS command,
+        ROUND((SYSDATE - s.logon_time) * 24, 1) AS duration_h,
+        s.status AS state,
+        SUBSTR(q.sql_text, 1, 200) AS current_sql,
+        (SELECT COUNT(*) FROM v$session WHERE username = s.username) AS user_conn_count,
+        (SELECT COUNT(*) FROM v$session) AS total_connections
+    FROM v$session s
+    LEFT JOIN v$sql q ON s.sql_id = q.sql_id
+    WHERE s.type != 'BACKGROUND'
+    ORDER BY (SYSDATE - s.logon_time) DESC
+) WHERE ROWNUM <= 50
+"""
+
 # ═══════════════════════════════════════════════════════════════
 # SQL Server
 # ═══════════════════════════════════════════════════════════════
@@ -341,6 +360,11 @@ CONNECTION_TEMPLATES = {
     'tidb': TIDB_CONNECTION_SQL,
 }
 
+# 连接查询 fallback（不同版本兼容）
+CONNECTION_FALLBACK_TEMPLATES = {
+    'oracle': ORACLE_CONNECTION_FALLBACK_SQL,
+}
+
 # 各数据库最大连接数默认值（用于计算使用率）
 MAX_CONNECTION_DEFAULTS = {
     'mysql': 151,
@@ -359,7 +383,7 @@ MAX_CONN_QUERY_SQL = {
     'postgresql': "SELECT setting::int AS max_conn FROM pg_settings WHERE name = 'max_connections'",
     'pg': "SELECT setting::int AS max_conn FROM pg_settings WHERE name = 'max_connections'",
     'ivorysql': "SELECT setting::int AS max_conn FROM pg_settings WHERE name = 'max_connections'",
-    'oracle': "SELECT TO_NUMBER(VALUE) AS max_conn FROM v$parameter WHERE NAME = 'processes'",
+    'oracle': "SELECT TO_NUMBER(VALUE) AS max_conn FROM v$parameter WHERE NAME = 'sessions'",
     'sqlserver': "SELECT 32767 AS max_conn",
     'dm': "SELECT VALUE AS max_conn FROM V$DM_INI WHERE PARA_NAME = 'MAX_SESSIONS'",
     'tidb': "SELECT @@global.max_connections AS max_conn",

@@ -249,11 +249,22 @@ class MonitorEngine:
         try:
             rows = self._connect_and_query(instance_id, conn_sql)
         except Exception as e:
-            print(f"[Monitor] 连接 SQL 失败 {label}: {e}", flush=True)
-            return {'data': [], 'error': f'连接SQL失败: {e}',
-                    'ts': time.time(), 'total': 0, 'max_conn': mq.MAX_CONNECTION_DEFAULTS.get(norm_type, 100),
-                    'connections': {'active': 0, 'idle': 0, 'blocked': 0}, 'usage_pct': 0,
-                    'db_type': db_type, 'label': label}
+            # 尝试 fallback SQL（兼容不同版本）
+            fallback_sql = mq.CONNECTION_FALLBACK_TEMPLATES.get(norm_type)
+            if fallback_sql:
+                try:
+                    rows = self._connect_and_query(instance_id, fallback_sql)
+                    print(f"[Monitor] {label} 使用 fallback 连接 SQL", flush=True)
+                except Exception as fb:
+                    return {'data': [], 'error': f'连接SQL失败: {fb}',
+                            'ts': time.time(), 'total': 0, 'max_conn': mq.MAX_CONNECTION_DEFAULTS.get(norm_type, 100),
+                            'connections': {'active': 0, 'idle': 0, 'blocked': 0}, 'usage_pct': 0,
+                            'db_type': db_type, 'label': label}
+            else:
+                return {'data': [], 'error': f'连接SQL失败: {e}',
+                        'ts': time.time(), 'total': 0, 'max_conn': mq.MAX_CONNECTION_DEFAULTS.get(norm_type, 100),
+                        'connections': {'active': 0, 'idle': 0, 'blocked': 0}, 'usage_pct': 0,
+                        'db_type': db_type, 'label': label}
 
         # 获取最大连接数
         max_sql = mq.MAX_CONN_QUERY_SQL.get(norm_type)

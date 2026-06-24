@@ -3438,9 +3438,13 @@ def api_monitor_slow_queries():
         from monitor_engine import get_monitor_engine
         engine = get_monitor_engine()
         data = engine.get_slow_queries()
+        # RBAC 资产过滤
+        allowed_ids = _get_rbac_allowed_asset_ids()
         # 转换为列表格式方便前端展示
         items = []
         for iid, d in data.items():
+            if allowed_ids is not None and str(iid) not in allowed_ids:
+                continue
             rows = d.get('data', [])
             if rows:
                 for row in rows:
@@ -3474,8 +3478,12 @@ def api_monitor_connections():
         from monitor_engine import get_monitor_engine
         engine = get_monitor_engine()
         data = engine.get_connections()
+        # RBAC 资产过滤
+        allowed_ids = _get_rbac_allowed_asset_ids()
         items = []
         for iid, d in data.items():
+            if allowed_ids is not None and str(iid) not in allowed_ids:
+                continue
             items.append({
                 'instance_id': iid,
                 'source': d.get('label', iid),
@@ -3501,29 +3509,37 @@ def api_monitor_history():
         from monitor_engine import get_monitor_engine
         engine = get_monitor_engine()
         raw_history = engine.get_conn_history()
+        # RBAC 资产过滤
+        allowed_ids = _get_rbac_allowed_asset_ids()
         # 后端格式: [{ts, instances: [{id, label, total, max_conn, db_type}]}, ...]
         # 前端期望: [{source, history: [{timestamp, active, total, max_conn, db_type}]}, ...]
         if not raw_history:
             return jsonify({'ok': True, 'history': []})
-        # 获取所有数据源（按最新快照的顺序）
+        # 获取所有数据源（按最新快照的顺序），RBAC 过滤
         latest = raw_history[-1]
         source_order = []
         source_map = {}
         for inst in latest.get('instances', []):
-            src = inst.get('label', inst.get('id', '?'))
+            iid = inst.get('id', '')
+            if allowed_ids is not None and str(iid) not in allowed_ids:
+                continue
+            src = inst.get('label', iid)
             if src not in source_map:
                 source_order.append(src)
-                source_map[src] = {'db_type': inst.get('db_type', ''), 'max_conn': inst.get('max_conn', 0)}
+                source_map[src] = {'db_type': inst.get('db_type', ''), 'max_conn': inst.get('max_conn', 0), 'id': iid}
         # 按数据源聚合
         result = []
         for src in source_order:
             hist_entries = []
             for snapshot in raw_history:
                 ts = snapshot.get('ts', 0)
-                # 在该时间戳找到对应数据源
                 found = None
                 for inst in snapshot.get('instances', []):
-                    if inst.get('label', inst.get('id', '?')) == src:
+                    inst_label = inst.get('label', inst.get('id', '?'))
+                    iid = inst.get('id', '')
+                    if allowed_ids is not None and str(iid) not in allowed_ids:
+                        continue
+                    if inst_label == src:
                         found = inst
                         break
                 if found:
@@ -3535,7 +3551,6 @@ def api_monitor_history():
                         'max_conn': found.get('max_conn', 0),
                     })
                 elif not found and hist_entries:
-                    # 数据源已消失，补 null
                     hist_entries.append({'timestamp': ts, 'active': None, 'total': None, 'max_conn': 0})
             result.append({
                 'source': src,
@@ -4393,6 +4408,21 @@ def _check_rbac_asset_access(instance_id):
         return str(instance_id) in [str(a) for a in allowed_ids]
     except Exception:
         return False  # fail-closed
+
+
+def _get_rbac_allowed_asset_ids():
+    """获取当前 RBAC 用户有权访问的数据源 ID 集合；非 RBAC 或 admin 返回 None 表示不过滤"""
+    if session.get('auth_source') != 'rbac':
+        return None  # 非 RBAC 不过滤
+    if session.get('role') == 'admin':
+        return None  # admin 不过滤
+    try:
+        from user_management.services.perm_service import PermService
+        ps = PermService()
+        allowed_ids = ps.get_allowed_asset_ids(session['user_id'])
+        return set(str(a) for a in allowed_ids)
+    except Exception:
+        return set()  # fail-closed: 返回空集合
 
 
 def _get_dashboard_db():

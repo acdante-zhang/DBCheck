@@ -17473,7 +17473,7 @@ function mkdirRemote() {
     hmBindResize();
   }
 
-  // ── 卡片 resize 拖拽 ──
+  // ── 卡片 resize 拖拽（互斥不重叠：通过 grid-column span 控制大小）──
   var _hmResizeData = null;
   function hmBindResize() {
     document.querySelectorAll('.hm-card-resize-handle').forEach(function(handle) {
@@ -17482,13 +17482,18 @@ function mkdirRemote() {
         e.stopPropagation();
         var card = handle.closest('.hm-card');
         if (!card) return;
+        // 禁用拖拽排序（resize 时不能同时拖拽）
+        card.draggable = false;
         _hmResizeData = {
           card: card,
           startX: e.clientX,
           startY: e.clientY,
           startW: card.offsetWidth,
           startH: card.offsetHeight,
+          startSpan: card.style.gridColumn || '',
         };
+        card.style.zIndex = '10';
+        card.style.position = 'relative';
         document.addEventListener('mousemove', hmResizeMove);
         document.addEventListener('mouseup', hmResizeEnd);
       });
@@ -17498,13 +17503,33 @@ function mkdirRemote() {
     if (!_hmResizeData) return;
     var dx = e.clientX - _hmResizeData.startX;
     var dy = e.clientY - _hmResizeData.startY;
-    var newW = Math.max(260, _hmResizeData.startW + dx);
+    var newW = _hmResizeData.startW + dx;
     var newH = Math.max(120, _hmResizeData.startH + dy);
-    _hmResizeData.card.style.width = newW + 'px';
-    _hmResizeData.card.style.gridColumn = 'span 1';
-    _hmResizeData.card.querySelector('.hm-card-body').style.maxHeight = (newH - 50) + 'px';
+    // 基于宽度决定 span：> 700px span 2, > 450px span 1, 否则 span 1 small
+    if (newW > 700) {
+      _hmResizeData.card.style.gridColumn = 'span 2';
+      _hmResizeData.card.style.maxWidth = '';
+      _hmResizeData.card.style.minWidth = '';
+    } else if (newW > 450) {
+      _hmResizeData.card.style.gridColumn = 'span 1';
+      _hmResizeData.card.style.maxWidth = '';
+      _hmResizeData.card.style.minWidth = '';
+    } else {
+      _hmResizeData.card.style.gridColumn = 'span 1';
+      _hmResizeData.card.style.maxWidth = '380px';
+      _hmResizeData.card.style.minWidth = '260px';
+    }
+    _hmResizeData.card.style.width = ''; // 清掉绝对宽度，让 grid 控制
+    // 高度：调整 card-body 的 max-height
+    var bodyEl = _hmResizeData.card.querySelector('.hm-card-body');
+    if (bodyEl) bodyEl.style.maxHeight = (newH - 50) + 'px';
   }
   function hmResizeEnd() {
+    if (_hmResizeData && _hmResizeData.card) {
+      _hmResizeData.card.style.zIndex = '';
+      _hmResizeData.card.style.position = '';
+      _hmResizeData.card.draggable = true;
+    }
     _hmResizeData = null;
     document.removeEventListener('mousemove', hmResizeMove);
     document.removeEventListener('mouseup', hmResizeEnd);
@@ -17515,7 +17540,8 @@ function mkdirRemote() {
   function hmCardWrap(title, icon, body, cardClass) {
     var style = '';
     if (cardClass === 'large') style = ' style="grid-column:span 2;"';
-    else if (cardClass === 'small') style = ' style="grid-column:span 1;max-width:380px;"';
+    else if (cardClass === 'small') style = ' style="grid-column:span 1;max-width:380px;min-width:260px;"';
+    else style = ' style="grid-column:span 1;"';
     return `<div class="hm-card ${cardClass||''}"${style}>
       <div class="hm-card-header">
         <span class="hm-card-icon">${icon||'📋'}</span>
@@ -17935,10 +17961,11 @@ function mkdirRemote() {
   }
 
   var _dbDragId = null;
-  function dbDragStart(event, cardId) { _dbDragId = cardId; event.dataTransfer.effectAllowed = 'move'; }
+  function dbDragStart(event, cardId) { _dbDragId = cardId; event.dataTransfer.effectAllowed = 'move'; event.stopPropagation(); }
   function dbDragOver(event) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }
   function dbDrop(event, targetId) {
     event.preventDefault();
+    event.stopPropagation();
     if (!_dbDragId || _dbDragId === targetId) return;
     var fromIdx = _dbCards.findIndex(c => c.id === _dbDragId);
     var toIdx = _dbCards.findIndex(c => c.id === targetId);
@@ -17951,8 +17978,10 @@ function mkdirRemote() {
     if (!grid) return;
     var cards = Array.from(grid.children);
     cards.sort(function(a, b) {
-      var aIdx = _dbCards.findIndex(function(c) { return c.id === a.id.replace('db-card-', ''); });
-      var bIdx = _dbCards.findIndex(function(c) { return c.id === b.id.replace('db-card-', ''); });
+      var aId = a.getAttribute('data-card-id') || a.id.replace('db-card-', '');
+      var bId = b.getAttribute('data-card-id') || b.id.replace('db-card-', '');
+      var aIdx = _dbCards.findIndex(function(c) { return c.id === aId; });
+      var bIdx = _dbCards.findIndex(function(c) { return c.id === bId; });
       return aIdx - bIdx;
     });
     cards.forEach(function(card) { grid.appendChild(card); });
@@ -17987,29 +18016,30 @@ function mkdirRemote() {
     const empty = document.getElementById('db-empty');
     if (_dbCards.length === 0) {
       empty.style.display = 'block';
-      // 移除所有卡片（保留empty）
       container.querySelectorAll('.db-card').forEach(el => el.remove());
       return;
     }
     empty.style.display = 'none';
-    // 保留现有的卡片元素，更新grid
-    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:14px;" id="db-grid">';
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;" id="db-grid">';
     _dbCards.forEach(card => {
       const ds = _dbDsCache.find(x => x.id === card.datasource_id);
       const dsLabel = ds ? (ds.name || ds.host+':'+ds.port) : card.datasource_id;
-      html += `<div class="db-card" id="db-card-${card.id}" draggable="true" ondragstart="dbDragStart(event,'${card.id}')" ondragover="dbDragOver(event)" ondrop="dbDrop(event,'${card.id}')" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:move;">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--border);">
-          <span id="db-card-title-${card.id}" style="font-weight:600;font-size:13px;cursor:pointer;" ondblclick="dbEditCardTitle('${card.id}')" title="双击编辑标题">${card.title}</span>
+      // 使用 data-card-id 存储卡片 ID
+      html += `<div class="db-card hm-card" id="db-card-${card.id}" data-card-id="${card.id}" draggable="true" ondragstart="dbDragStart(event,'${card.id}')" ondragover="dbDragOver(event)" ondrop="dbDrop(event,'${card.id}')" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;position:relative;grid-column:span 1;">
+        <div class="hm-card-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);">
+          <span id="db-card-title-${card.id}" style="font-weight:600;font-size:13px;cursor:pointer;flex:1;" ondblclick="dbEditCardTitle('${card.id}')" title="双击编辑标题">${card.title}</span>
           <div style="display:flex;gap:4px;align-items:center;">
             <span style="font-size:10px;color:var(--text-muted);background:var(--surface);padding:2px 6px;border-radius:4px;">${dsLabel}</span>
             <span style="font-size:10px;color:var(--text-muted);">${card.type==='custom_sql'?'SQL':card.monitor_item||''}</span>
+            <span class="hm-card-resize" title="拖拽调整大小" style="cursor:nwse-resize;font-size:10px;color:var(--text-muted);padding:0 4px;">⤢</span>
             <button onclick="dbEditCardTitle('${card.id}')" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--text-muted);padding:0 4px;" title="编辑标题">✏️</button>
             <button onclick="dbDeleteCard('${card.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);padding:0 4px;" title="删除">✕</button>
           </div>
         </div>
-        <div style="padding:12px 14px;min-height:80px;max-height:350px;overflow-y:auto;" id="db-card-body-${card.id}">
+        <div class="hm-card-body" style="padding:12px 14px;min-height:80px;max-height:350px;overflow-y:auto;" id="db-card-body-${card.id}">
           <div style="text-align:center;color:var(--text-muted);padding:20px;">加载中...</div>
         </div>
+        <div class="hm-card-resize-handle db-resize-handle" style="position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,var(--border) 50%);"></div>
       </div>`;
     });
     html += '</div>';
@@ -18018,6 +18048,66 @@ function mkdirRemote() {
     const grid = container.querySelector('#db-grid');
     if (grid) grid.remove();
     container.insertAdjacentHTML('beforeend', html);
+    // 绑定数据看板 resize 事件
+    dbBindResize();
+  }
+
+  // ── 数据看板卡片 resize（复用健康监控的 resize 逻辑）──
+  var _dbResizeData = null;
+  function dbBindResize() {
+    document.querySelectorAll('.db-resize-handle').forEach(function(handle) {
+      handle.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var card = handle.closest('.db-card');
+        if (!card) return;
+        card.draggable = false;
+        _dbResizeData = {
+          card: card,
+          startX: e.clientX,
+          startY: e.clientY,
+          startW: card.offsetWidth,
+          startH: card.offsetHeight,
+        };
+        card.style.zIndex = '10';
+        card.style.position = 'relative';
+        document.addEventListener('mousemove', dbResizeMove);
+        document.addEventListener('mouseup', dbResizeEnd);
+      });
+    });
+  }
+  function dbResizeMove(e) {
+    if (!_dbResizeData) return;
+    var dx = e.clientX - _dbResizeData.startX;
+    var dy = e.clientY - _dbResizeData.startY;
+    var newW = _dbResizeData.startW + dx;
+    var newH = Math.max(120, _dbResizeData.startH + dy);
+    if (newW > 700) {
+      _dbResizeData.card.style.gridColumn = 'span 2';
+      _dbResizeData.card.style.maxWidth = '';
+      _dbResizeData.card.style.minWidth = '';
+    } else if (newW > 450) {
+      _dbResizeData.card.style.gridColumn = 'span 1';
+      _dbResizeData.card.style.maxWidth = '';
+      _dbResizeData.card.style.minWidth = '';
+    } else {
+      _dbResizeData.card.style.gridColumn = 'span 1';
+      _dbResizeData.card.style.maxWidth = '380px';
+      _dbResizeData.card.style.minWidth = '260px';
+    }
+    _dbResizeData.card.style.width = '';
+    var bodyEl = _dbResizeData.card.querySelector('.hm-card-body');
+    if (bodyEl) bodyEl.style.maxHeight = (newH - 50) + 'px';
+  }
+  function dbResizeEnd() {
+    if (_dbResizeData && _dbResizeData.card) {
+      _dbResizeData.card.style.zIndex = '';
+      _dbResizeData.card.style.position = '';
+      _dbResizeData.card.draggable = true;
+    }
+    _dbResizeData = null;
+    document.removeEventListener('mousemove', dbResizeMove);
+    document.removeEventListener('mouseup', dbResizeEnd);
   }
 
   async function dbRefreshAll() {
