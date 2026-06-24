@@ -117,6 +117,36 @@ def init_seed_data():
     print("     - viewer / viewer123 (只读用户)")
     print("     - operator / operator123 (运维人员)")
 
+    # 8. 迁移：确保 health_monitor 菜单存在并分配权限
+    hm_menu = db.query_one("SELECT id FROM um_menu WHERE menu_code='health_monitor'")
+    if not hm_menu:
+        max_order = db.query_one("SELECT MAX(sort_order) as m FROM um_menu")
+        next_order = (max_order['m'] or 0) + 1
+        db.execute(
+            "INSERT OR IGNORE INTO um_menu(menu_code, menu_name, parent_id, sort_order) VALUES(?,?,?,?)",
+            ('health_monitor', '健康监控', 0, next_order)
+        )
+        hm_menu = db.query_one("SELECT id FROM um_menu WHERE menu_code='health_monitor'")
+        print("  ✅ 健康监控菜单已添加")
+    # 为所有角色分配健康监控权限
+    if hm_menu:
+        roles = db.query_all("SELECT id, role_code FROM um_role")
+        perm_map = {'admin': 4, 'operator': 2, 'viewer': 1}
+        for role in roles:
+            existing = db.query_one(
+                "SELECT id FROM um_role_menu_perm WHERE role_id=? AND menu_id=?",
+                (role['id'], hm_menu['id'])
+            )
+            if not existing:
+                perm_level = perm_map.get(role['role_code'], 1)
+                perm = db.query_one("SELECT id FROM um_permission WHERE perm_level=?", (perm_level,))
+                if perm:
+                    db.execute(
+                        "INSERT OR IGNORE INTO um_role_menu_perm(role_id, menu_id, perm_id) VALUES(?,?,?)",
+                        (role['id'], hm_menu['id'], perm['id'])
+                    )
+        print("  ✅ 健康监控权限已分配")
+
     print("\n🎉 RBAC 种子数据初始化完成!")
 
 

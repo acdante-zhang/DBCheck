@@ -82,7 +82,8 @@ INSERT OR IGNORE INTO um_menu(menu_code, menu_name, parent_id, sort_order) VALUE
     ('ai_diagnosis',  'AI 诊断',      0, 4),
     ('plugin_market', '插件市场',      0, 5),
     ('asset_manage',  '资产管理',      0, 6),
-    ('system_manage', '系统管理',      0, 7);
+    ('system_manage', '系统管理',      0, 7),
+    ('health_monitor','健康监控',      0, 8);
 
 -- ============================================
 -- 6. 角色-菜单-权限关联表

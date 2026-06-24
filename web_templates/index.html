@@ -4073,6 +4073,9 @@ function formatBytes(bytes) {
     <div class="nav-item" onclick="showPage('monitor-conn')" id="nav-monitor-conn">
       <span class="icon">🔥</span> <span data-i18n="webui.nav_monitor_conn">活跃连接监控</span>
     </div>
+    <div class="nav-item" onclick="showPage('health-monitor')" id="nav-health-monitor">
+      <span class="icon">💚</span> <span>健康监控</span>
+    </div>
 
     <!-- ── 系统 ── -->
     <div class="nav-section" data-i18n="webui.nav_section_system">系统</div>
@@ -5818,6 +5821,32 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
         </div>
       </div>
 
+      <!-- ═══ 健康监控页面 ═══ -->
+      <div class="page" id="page-health-monitor" style="display:none;flex-direction:column;height:100%;">
+        <div class="page-toolbar" style="padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;">
+          <label style="font-weight:600;font-size:13px;">数据源：</label>
+          <select id="hm-ds-select" onchange="hmSwitchDS()" style="min-width:180px;max-width:300px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);">
+            <option value="">-- 选择数据源 --</option>
+          </select>
+          <button onclick="hmRefresh()" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;">🔄 刷新</button>
+          <span style="margin-left:auto;color:var(--text2);font-size:11px;" id="hm-update-time"></span>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+            <input type="checkbox" id="hm-auto-refresh" checked onchange="hmToggleAuto()"> 自动刷新
+          </label>
+          <span style="font-size:11px;color:var(--text-muted);">间隔</span>
+          <input type="number" id="hm-interval" value="30" min="10" max="300" style="width:55px;padding:4px;border-radius:6px;border:1px solid var(--border);font-size:12px;" onchange="hmSetInterval()">
+          <span style="font-size:11px;color:var(--text-muted);">秒</span>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:12px 16px;">
+          <div id="hm-card-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px;"></div>
+          <div id="hm-empty" style="display:none;text-align:center;padding:60px 20px;color:var(--text-muted);">
+            <div style="font-size:48px;margin-bottom:12px;">💚</div>
+            <div style="font-size:16px;font-weight:600;">选择数据源开始健康监控</div>
+            <div style="font-size:13px;margin-top:4px;">从上方下拉框选择一个已配置的数据源</div>
+          </div>
+        </div>
+      </div>
+
       <!-- 巡检配置管理页面 -->
       <div class="page" id="page-inspection-config" style="display:none;">
         <div class="page-header">
@@ -6459,6 +6488,7 @@ function applyI18N() {
     'server-thresholds': ['服务器阈值配置', '配置服务器健康评分阈值'],
     'monitor-slow':     ['实时慢查询',     '定时拉取各数据源 Top SQL'],
     'monitor-conn':     ['活跃连接监控',   '实时查看各数据源连接数'],
+    'health-monitor':   ['💚 健康监控',   '实时监控数据库关键指标，快速发现异常'],
     };
     const _t = _titles[pageName];
     if (_t) {
@@ -6605,6 +6635,7 @@ function showPage(name) {
     shares: ['🔗 分享管理', '管理已生成的巡检报告分享链接'],
     'monitor-slow': [i18n('monitor.slow_title') || '实时慢查询', i18n('monitor.slow_desc') || '定时拉取各数据源 Top SQL'],
     'monitor-conn': [i18n('monitor.conn_title') || '活跃连接监控', i18n('monitor.conn_desc') || '实时查看各数据源连接数'],
+    'health-monitor': ['💚 健康监控', '实时监控数据库关键指标，快速发现异常'],
     'data-management': [i18n('webui.data_management_title') || '数据管理', i18n('webui.data_management_desc') || '管理 Acdante DB Inspector 自身数据文件'],
     'awr': [i18n('webui.awr_nav') || 'AWR 报告分析', i18n('webui.awr_desc') || '上传 Oracle AWR HTML 报告自动生成分析报告'],
     'oracle-client': [i18n('webui.oracle_client_title') || '数据库驱动设置', ''],
@@ -6659,6 +6690,7 @@ function showPage(name) {
   }
   if (name === 'monitor-slow') loadMonitorSlow();
   if (name === 'monitor-conn') loadMonitorConn();
+  if (name === 'health-monitor') hmInitPage();
   // SQL 编辑器需要 height 约束（其他页面用 min-height 允许滚动）
   var mainEl = document.querySelector('.main');
   if (mainEl) {
@@ -15309,6 +15341,24 @@ async function deleteBackupHistory(recordId) {
   .mon-state-locked    { color:#f87171;font-weight:500; }
   .mon-state-sleep     { color:#94a3b8; }
   .mon-state-idle      { color:#94a3b8; }
+
+  /* ═══ 健康监控卡片样式 ═══ */
+  .hm-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; transition:box-shadow 0.2s; }
+  .hm-card:hover { box-shadow:0 2px 12px rgba(0,0,0,0.08); }
+  .hm-card-header { display:flex; align-items:center; gap:8px; padding:10px 14px; background:var(--surface2); border-bottom:1px solid var(--border); }
+  .hm-card-icon { font-size:18px; }
+  .hm-card-title { font-weight:600; font-size:14px; flex:1; }
+  .hm-card-body { padding:12px 14px; max-height:420px; overflow-y:auto; }
+  .hm-mini-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .hm-mini-table th { text-align:left; padding:4px 6px; border-bottom:2px solid var(--border); color:var(--text2); font-weight:600; font-size:11px; }
+  .hm-mini-table td { padding:4px 6px; border-bottom:1px solid var(--border); font-size:12px; }
+  .hm-stat { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .hm-stat:last-child { border-bottom:none; }
+  .hm-usage-bar { height:6px; background:var(--border); border-radius:3px; overflow:hidden; flex:1; min-width:60px; }
+  .hm-usage-fill { height:100%; border-radius:3px; transition:width 0.6s ease; }
+  .hm-usage-fill.ok { background:linear-gradient(90deg,#52c41a,#73d13d); }
+  .hm-usage-fill.warning { background:linear-gradient(90deg,#faad14,#ffc53d); }
+  .hm-usage-fill.critical { background:linear-gradient(90deg,#f5222d,#ff4d4f); }
 </style>
 <div id="about-modal" class="about-modal-overlay" onclick="closeAboutModal(event)">
   <div class="about-modal-box" onclick="event.stopPropagation()">
@@ -16990,6 +17040,265 @@ function mkdirRemote() {
       if (d.ok) { toastSuccess('已重载 ' + d.loaded + ' 个插件'); loadMarketPlugins(); }
       else toastError(d.error || '重载失败');
     } catch(e) { toastError('重载失败: ' + e.message); }
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  健康监控页面逻辑
+  // ═══════════════════════════════════════════════════
+  let _hmTimer = null;
+  let _hmCurrentDS = null;
+
+  async function hmInitPage() {
+    const sel = document.getElementById('hm-ds-select');
+    sel.innerHTML = '<option value="">-- 加载中 --</option>';
+    try {
+      const r = await fetch('/api/pro/datasources');
+      const d = await r.json();
+      sel.innerHTML = '<option value="">-- 选择数据源 --</option>';
+      if (d.instances && d.instances.length) {
+        d.instances.forEach(inst => {
+          sel.innerHTML += `<option value="${inst.id}">${inst.name || inst.host+':'+inst.port} (${inst.db_type||''})</option>`;
+        });
+      }
+      if (d.instances && d.instances.length === 0) {
+        document.getElementById('hm-empty').style.display = 'block';
+        document.getElementById('hm-card-grid').style.display = 'none';
+      }
+    } catch(e) {
+      sel.innerHTML = '<option value="">-- 加载失败 --</option>';
+    }
+    hmToggleAuto();
+  }
+
+  async function hmSwitchDS() {
+    const v = document.getElementById('hm-ds-select').value;
+    _hmCurrentDS = v || null;
+    if (!v) {
+      document.getElementById('hm-empty').style.display = 'block';
+      document.getElementById('hm-card-grid').style.display = 'none';
+      return;
+    }
+    document.getElementById('hm-empty').style.display = 'none';
+    document.getElementById('hm-card-grid').style.display = 'grid';
+    await hmLoadData(v);
+  }
+
+  async function hmRefresh() {
+    if (_hmCurrentDS) await hmLoadData(_hmCurrentDS);
+  }
+
+  async function hmLoadData(instanceId) {
+    try {
+      const r = await fetch('/api/health-monitor/data/' + instanceId);
+      const d = await r.json();
+      if (d.ok && d.instance) {
+        hmRenderCards(d.instance);
+        document.getElementById('hm-update-time').textContent =
+          '更新: ' + new Date((d.instance.ts||0)*1000).toLocaleTimeString();
+      } else if (d.instance && d.instance.error) {
+        hmShowError(d.instance.error);
+      }
+    } catch(e) {
+      hmShowError('请求失败: ' + e.message);
+    }
+  }
+
+  function hmShowError(msg) {
+    const grid = document.getElementById('hm-card-grid');
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:#e74c3c;">
+      <div style="font-size:36px;">⚠️</div>
+      <div style="margin-top:8px;">${msg}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">请确认数据源连接正常</div>
+    </div>`;
+  }
+
+  function hmRenderCards(inst) {
+    const grid = document.getElementById('hm-card-grid');
+    const cards = inst.cards || {};
+    const dbType = inst.db_type || '';
+
+    // 卡片渲染器映射
+    const renderers = {
+      'rac_status':       hmRenderRacCard,
+      'db_size':          hmRenderDbSizeCard,
+      'adg_status':       hmRenderAdgCard,
+      'backup_status':    hmRenderBackupCard,
+      'asm_diskgroup':    hmRenderAsmCard,
+      'tablespace_usage': hmRenderTablespaceCard,
+      'session_stats':    hmRenderSessionCard,
+      'schema_users':     hmRenderSchemaCard,
+      'instance_info':    hmRenderInfoCard,
+    };
+
+    let html = '';
+    for (const [cardType, renderFn] of Object.entries(renderers)) {
+      if (!cards[cardType]) continue;
+      if (cards[cardType]._error) continue; // 跳过查询失败的卡片
+      const cardHtml = renderFn(cards[cardType], dbType);
+      if (cardHtml) html += cardHtml;
+    }
+
+    if (!html) {
+      html = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">
+        <div style="font-size:36px;">📭</div><div>暂无监控数据，请检查数据源连接</div></div>`;
+    }
+    grid.innerHTML = html;
+  }
+
+  // ── 各卡片渲染 ──
+
+  function hmCardWrap(title, icon, body, cardClass) {
+    return `<div class="hm-card ${cardClass||''}">
+      <div class="hm-card-header"><span class="hm-card-icon">${icon||'📋'}</span><span class="hm-card-title">${title}</span></div>
+      <div class="hm-card-body">${body}</div></div>`;
+  }
+
+  function hmMiniTable(rows, cols) {
+    if (!rows || !rows.length) return '<div style="color:var(--text-muted);padding:8px;">暂无数据</div>';
+    let h = '<table class="hm-mini-table"><thead><tr>';
+    cols.forEach(c => h += `<th>${c}</th>`);
+    h += '</tr></thead><tbody>';
+    rows.forEach(row => {
+      h += '<tr>';
+      cols.forEach(c => h += `<td>${row[c.toLowerCase()] !== undefined ? row[c.toLowerCase()] : '-'}</td>`);
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+    return h;
+  }
+
+  function hmUsageBar(pct) {
+    pct = parseFloat(pct) || 0;
+    const cls = pct > 90 ? 'critical' : (pct > 80 ? 'warning' : 'ok');
+    return `<div class="hm-usage-bar"><div class="hm-usage-fill ${cls}" style="width:${Math.min(pct,100)}%"></div></div><span style="font-size:11px;margin-left:4px;color:${pct>90?'#f5222d':pct>80?'#faad14':'#52c41a'}">${pct}%</span>`;
+  }
+
+  function hmRenderRacCard(data) {
+    const rows = data.instances || data;
+    if (!rows.length) return '';
+    const cols = ['inst_id','instance_name','host_name','instance_role','status','uptime_hours'];
+    return hmCardWrap('RAC 集群状态', '🖥️', hmMiniTable(rows, ['实例ID','实例名','节点','角色','状态','运行(小时)']));
+  }
+
+  function hmRenderDbSizeCard(data) {
+    const d = Array.isArray(data) ? data[0] : data;
+    if (!d) return '';
+    let body = '';
+    if (d.datafile_gb !== undefined) body += `<div class="hm-stat"><span>数据文件</span><b>${d.datafile_gb} GB</b></div>`;
+    if (d.segment_gb !== undefined) body += `<div class="hm-stat"><span>段大小</span><b>${d.segment_gb} GB</b></div>`;
+    if (d.total_gb !== undefined) body += `<div class="hm-stat" style="font-size:16px;"><span>总大小</span><b style="color:#0f3460;">${d.total_gb} GB</b></div>`;
+    return hmCardWrap('数据库总大小', '💾', body);
+  }
+
+  function hmRenderAdgCard(data) {
+    const d = Array.isArray(data) ? data[0] : data;
+    if (!d) return '';
+    let body = `<div class="hm-stat"><span>角色</span><b>${d.database_role||'-'}</b></div>
+      <div class="hm-stat"><span>备库数</span><b>${d.standby_count||0}</b></div>
+      <div class="hm-stat"><span>最大延迟</span><b style="color:${(d.max_apply_lag_min||0)>5?'#f5222d':'#52c41a'}">${d.max_apply_lag_min||0} 分钟</b></div>`;
+    return hmCardWrap('ADG 同步状态', '🔄', body);
+  }
+
+  function hmRenderBackupCard(data) {
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) return hmCardWrap('备份状态', '💿', '<div style="color:var(--text-muted);">无最近备份记录</div>');
+    return hmCardWrap('备份状态', '💿', hmMiniTable(rows.slice(0,7), ['备份时间','状态','类型','大小(GB)','耗时(分)']));
+  }
+
+  function hmRenderAsmCard(data) {
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) return '';
+    let body = '';
+    rows.forEach(d => {
+      body += `<div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;">
+          <span><b>${d.name}</b> (${d.type||''})</span><span>${d.used_gb}/${d.total_gb} GB</span></div>
+        ${hmUsageBar(d.usage_pct)}
+      </div>`;
+    });
+    return hmCardWrap('ASM 磁盘组', '💽', body);
+  }
+
+  function hmRenderTablespaceCard(data) {
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) return '';
+    let body = '';
+    const showRows = rows.slice(0, 15);
+    showRows.forEach(d => {
+      body += `<div style="margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;">
+          <span>${d.tablespace_name}</span>
+          <span style="color:${d.status==='CRITICAL'?'#f5222d':d.status==='WARNING'?'#faad14':'inherit'}">${d.used_gb}/${d.total_gb} GB</span></div>
+        ${hmUsageBar(d.usage_pct)}
+      </div>`;
+    });
+    if (rows.length > 15) body += `<div style="text-align:center;color:var(--text-muted);font-size:11px;">... 还有 ${rows.length-15} 个表空间</div>`;
+    return hmCardWrap('表空间使用率', '📊', body);
+  }
+
+  function hmRenderSessionCard(data) {
+    const d = Array.isArray(data) ? data[0] : data;
+    if (!d) return '';
+    let body = `<div class="hm-stat"><span>总会话</span><b>${d.total_sessions||0} / ${d.session_limit||0}</b></div>
+      ${hmUsageBar(d.usage_pct)}
+      <div style="display:flex;gap:12px;margin-top:8px;font-size:12px;">
+        <span>🟢 活动: <b>${d.active_sessions||0}</b></span>
+        <span>⚪ 非活动: <b>${d.inactive_sessions||0}</b></span>
+        ${d.background_sessions!==undefined?`<span>🔵 后台: <b>${d.background_sessions}</b></span>`:''}
+      </div>`;
+    return hmCardWrap('会话统计', '👥', body);
+  }
+
+  function hmRenderSchemaCard(data) {
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) return hmCardWrap('Schema 用户', '👤',
+      '<button onclick="hmLoadSchemaUsers()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);cursor:pointer;">点击加载 Schema 用户列表</button>');
+    return hmCardWrap('Schema 用户', '👤',
+      `<div style="max-height:300px;overflow-y:auto;">${hmMiniTable(rows.slice(0,30), ['用户名','状态','创建日期','默认表空间'])}</div>` +
+      (rows.length>30?`<div style="font-size:11px;color:var(--text-muted);text-align:center;">共 ${rows.length} 个用户</div>`:''));
+  }
+
+  function hmRenderInfoCard(data) {
+    const d = Array.isArray(data) ? data[0] : data;
+    if (!d) return '';
+    let body = `<div class="hm-stat"><span>实例</span><b>${d.instance_name||'-'}</b></div>
+      <div class="hm-stat"><span>主机</span><b>${d.host_name||'-'}</b></div>
+      <div class="hm-stat"><span>版本</span><b>${d.version||'-'}</b></div>
+      <div class="hm-stat"><span>启动时间</span><b>${d.startup_time||'-'}</b></div>`;
+    return hmCardWrap('实例信息', 'ℹ️', body);
+  }
+
+  async function hmLoadSchemaUsers() {
+    if (!_hmCurrentDS) return;
+    try {
+      const r = await fetch('/api/health-monitor/schema-users/' + _hmCurrentDS);
+      const d = await r.json();
+      if (d.ok) {
+        const card = hmRenderSchemaCard(d.users);
+        // 替换 schema_users 卡片
+        const existing = document.querySelector('.hm-card:has(.hm-card-title:contains("Schema"))');
+        if (existing) existing.outerHTML = card;
+      }
+    } catch(e) { toastError('加载失败: ' + e.message); }
+  }
+
+  function hmToggleAuto() {
+    const checked = document.getElementById('hm-auto-refresh').checked;
+    if (checked) hmStartTimer(); else hmStopTimer();
+  }
+
+  function hmStartTimer() {
+    hmStopTimer();
+    const interval = parseInt(document.getElementById('hm-interval').value) || 30;
+    _hmTimer = setInterval(hmRefresh, interval * 1000);
+  }
+
+  function hmStopTimer() {
+    if (_hmTimer) { clearInterval(_hmTimer); _hmTimer = null; }
+  }
+
+  function hmSetInterval() {
+    if (document.getElementById('hm-auto-refresh').checked) hmStartTimer();
   }
   </script>
 </div><!-- .app-layout -->

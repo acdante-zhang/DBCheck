@@ -3559,6 +3559,131 @@ def api_monitor_config():
         return jsonify({'ok': False, 'error': str(e)})
 
 # ═══════════════════════════════════════════════════════════
+#  健康监控 API（数据库健康状态监控页面）
+# ═══════════════════════════════════════════════════════════
+
+@app.route('/api/health-monitor/status', methods=['GET'])
+def api_health_monitor_status():
+    """获取健康监控引擎状态"""
+    try:
+        from health_monitor_engine import get_health_monitor_engine
+        engine = get_health_monitor_engine()
+        return jsonify({'ok': True, 'data': engine.get_status()})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/health-monitor/start', methods=['POST'])
+def api_health_monitor_start():
+    """启动健康监控"""
+    try:
+        from health_monitor_engine import get_health_monitor_engine
+        body = request.get_json() or {}
+        instance_ids = body.get('instance_ids', [])
+        interval = body.get('interval')
+        engine = get_health_monitor_engine()
+        if interval:
+            engine.set_interval(interval)
+        engine.set_instance_ids(instance_ids)
+        engine.start()
+        return jsonify({'ok': True, 'msg': '监控已启动'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/health-monitor/stop', methods=['POST'])
+def api_health_monitor_stop():
+    """停止健康监控"""
+    try:
+        from health_monitor_engine import get_health_monitor_engine
+        engine = get_health_monitor_engine()
+        engine.stop()
+        return jsonify({'ok': True, 'msg': '监控已停止'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/health-monitor/data', methods=['GET'])
+def api_health_monitor_data():
+    """获取所有监控实例的健康数据"""
+    try:
+        from health_monitor_engine import get_health_monitor_engine
+        engine = get_health_monitor_engine()
+        data = engine.get_health_data()
+        result = []
+        for iid, v in data.items():
+            item = {
+                'instance_id': v.get('instance_id', iid),
+                'label': v.get('label', ''),
+                'db_type': v.get('db_type', ''),
+                'host': v.get('host', ''),
+                'port': v.get('port', ''),
+                'cards': v.get('cards', {}),
+                'error': v.get('error'),
+                'ts': v.get('ts', 0),
+            }
+            result.append(item)
+        return jsonify({'ok': True, 'instances': result, 'ts': time.time()})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/health-monitor/data/<instance_id>', methods=['GET'])
+def api_health_monitor_instance(instance_id):
+    """获取单个实例的详细健康数据"""
+    try:
+        from health_monitor_engine import get_health_monitor_engine
+        engine = get_health_monitor_engine()
+        data = engine.get_health_data(instance_id=instance_id)
+        if not data:
+            return jsonify({'ok': False, 'error': '实例数据不存在'}), 404
+        return jsonify({
+            'ok': True,
+            'instance': {
+                'instance_id': data.get('instance_id'),
+                'label': data.get('label', ''),
+                'db_type': data.get('db_type', ''),
+                'host': data.get('host', ''),
+                'port': data.get('port', ''),
+                'cards': data.get('cards', {}),
+                'error': data.get('error'),
+                'ts': data.get('ts', 0),
+            }
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/health-monitor/schema-users/<instance_id>', methods=['GET'])
+def api_health_monitor_schema_users(instance_id):
+    """按需查询 Schema 用户列表"""
+    try:
+        from pro.instance_manager import get_instance_manager
+        from health_monitor_queries import ORACLE_HEALTH_SQL
+        im = get_instance_manager()
+        inst = im.get_instance_decrypted(int(instance_id))
+        if not inst:
+            return jsonify({'ok': False, 'error': '实例不存在'}), 404
+
+        db_type = inst.get('db_type', '').lower()
+        if db_type not in ('oracle', 'oracle_rac'):
+            return jsonify({'ok': False, 'error': '仅 Oracle 支持 Schema 用户查询'}), 400
+
+        import oracledb
+        dsn = f"{inst['host']}:{inst['port']}/{inst.get('service_name', inst.get('sid', 'orcl'))}"
+        conn = oracledb.connect(user=inst['user'], password=inst['password'], dsn=dsn)
+        cursor = conn.cursor()
+        cursor.execute(ORACLE_HEALTH_SQL['schema_users'])
+        columns = [col[0].lower() for col in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        return jsonify({'ok': True, 'users': rows})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════
 #  AWR 报告分析 API
 # ═══════════════════════════════════════════════════════════
 
