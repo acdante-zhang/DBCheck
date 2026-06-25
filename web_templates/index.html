@@ -6103,6 +6103,10 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="2"/></svg>
                 <span>停止</span>
               </button>
+              <button class="mon-ctrl-btn" onclick="openMonitorSqlEditor()" id="monitor-sql-edit-btn" style="display:none;background:var(--surface2);border:1px dashed var(--accent);color:var(--accent);" title="自定义监控SQL">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <span>编辑SQL</span>
+              </button>
               <span style="font-size:12px;color:var(--text-muted);margin-left:4px">间隔</span>
               <input type="number" id="monitor-interval-input" value="10" min="5" max="60" class="mon-interval-input" onchange="setMonitorInterval()">
               <span style="font-size:11px;color:var(--text-muted)">秒</span>
@@ -6206,6 +6210,10 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <button class="mon-ctrl-btn mon-ctrl-stop" onclick="stopMonitor()" id="monitor-stop-btn-conn" style="display:none" title="停止监控">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="2"/></svg>
                 <span>停止</span>
+              </button>
+              <button class="mon-ctrl-btn" onclick="openMonitorSqlEditor()" id="monitor-sql-edit-btn-conn" style="display:none;background:var(--surface2);border:1px dashed var(--accent);color:var(--accent);" title="自定义监控SQL">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <span>编辑SQL</span>
               </button>
               <span style="font-size:12px;color:var(--text-muted);margin-left:4px">间隔</span>
               <input type="number" id="monitor-interval-input-conn" value="10" min="5" max="60" class="mon-interval-input" onchange="setMonitorIntervalFrom(this)">
@@ -11332,6 +11340,7 @@ function dismiss(el) {
 }
 function toastSuccess(msg, duration) { return toast(msg, 'success', duration); }
 function toastError(msg, duration)   { return toast(msg, 'error', duration || 5000); }
+function toastMsg(msg, duration)    { return toast(msg, 'success', duration || 3000); }
 
 function toastConfirm(msg) {
   return new Promise(resolve => {
@@ -11928,6 +11937,7 @@ async function checkLogin() {
     document.getElementById('login-overlay').style.display = 'none';
     document.body.style.overflow = '';
     window._currentUser = d.user;
+    window._userRole = d.user.role || '';  // admin 用于显示 SQL 编辑按钮等
     var ue = document.getElementById('topbar-user');
     ue.style.display = '';
     document.getElementById('topbar-user-name').textContent = d.user.display_name || d.user.username;
@@ -14029,6 +14039,16 @@ async function deleteBackupHistory(recordId) {
       btn.style.display = (status === 'running') ? 'inline-flex' : 'none';
     });
 
+    // Admin 显示 SQL 编辑按钮
+    var sqlBtns = [
+      document.getElementById('monitor-sql-edit-btn'),
+      document.getElementById('monitor-sql-edit-btn-conn')
+    ];
+    sqlBtns.forEach(function(btn) {
+      if (!btn) return;
+      btn.style.display = (typeof _userRole !== 'undefined' && _userRole === 'admin') ? 'inline-flex' : 'none';
+    });
+
     // 启动/停止倒计时
     if (status === 'running') {
       startMonitorCountdown();
@@ -14085,6 +14105,88 @@ async function deleteBackupHistory(recordId) {
         toastError(data.error || '停止失败');
       }
     } catch(e) { toastError('停止失败: ' + e.message); }
+  }
+
+  // ── Admin SQL 编辑器 ──
+  async function openMonitorSqlEditor() {
+    try {
+      const r = await fetch('/api/monitor/sql-templates');
+      const d = await r.json();
+      if (!d.ok) { toastError(d.error || '无权限'); return; }
+      const templates = d.templates || {};
+      // 分类标签
+      const catLabels = {slow_query:'慢查询SQL', connection:'活跃连接SQL', max_conn_query:'最大连接数SQL'};
+      const dbLabels = {mysql:'MySQL', postgresql:'PostgreSQL', pg:'PostgreSQL', ivorysql:'IvorySQL',
+        oracle:'Oracle', sqlserver:'SQL Server', dm:'达梦DM8', tidb:'TiDB'};
+      var options = '';
+      for (const [key, tpl] of Object.entries(templates)) {
+        var dbLabel = dbLabels[tpl.db_type] || tpl.db_type;
+        var catLabel = catLabels[tpl.category] || tpl.category;
+        var badge = tpl.is_overridden ? ' 🔧' : '';
+        options += `<option value="${key}">${catLabel} - ${dbLabel}${badge}</option>`;
+      }
+      document.getElementById('db-modal-content').innerHTML = `
+        <h3 style="margin:0 0 8px;">🔧 自定义监控 SQL</h3>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;">修改后点击保存，监控引擎将使用新SQL。点击"恢复默认"可还原。</p>
+        <div class="um-form-group"><label>选择模板</label>
+          <select id="mon-sql-key" onchange="monSqlSelectTemplate()" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">${options}</select>
+        </div>
+        <div class="um-form-group"><label>SQL 语句</label>
+          <textarea id="mon-sql-text" rows="10" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-family:monospace;font-size:12px;background:var(--bg);color:var(--text);"></textarea>
+        </div>
+        <div id="mon-sql-default" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;word-break:break-all;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="um-btn" onclick="monSqlReset()" style="background:var(--red);color:#fff;">恢复默认</button>
+          <button class="um-btn" onclick="document.getElementById('db-modal-overlay').style.display='none'" style="background:var(--border);">取消</button>
+          <button class="um-btn um-btn-primary" onclick="monSqlSave()">保存</button>
+        </div>`;
+      document.getElementById('db-modal-overlay').style.display = 'flex';
+      // 存储模板数据
+      window._monSqlTemplates = templates;
+      // 自动选中第一个
+      var firstKey = Object.keys(templates)[0];
+      if (firstKey) { document.getElementById('mon-sql-key').value = firstKey; monSqlSelectTemplate(); }
+    } catch(e) { toastError('加载失败: ' + e.message); }
+  }
+  function monSqlSelectTemplate() {
+    var key = document.getElementById('mon-sql-key').value;
+    var tpl = window._monSqlTemplates && window._monSqlTemplates[key];
+    if (!tpl) return;
+    document.getElementById('mon-sql-text').value = tpl.current_sql || '';
+    document.getElementById('mon-sql-default').innerHTML = '<b>默认SQL:</b><br><code style="font-size:10px;">' +
+      (tpl.default_sql || '').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') + '</code>';
+  }
+  async function monSqlSave() {
+    var key = document.getElementById('mon-sql-key').value;
+    var sql = document.getElementById('mon-sql-text').value.trim();
+    if (!sql) { toastError('SQL 不能为空'); return; }
+    try {
+      var r = await fetch('/api/monitor/sql-templates', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({key: key, sql: sql})
+      });
+      var d = await r.json();
+      if (d.ok) { toastMsg('SQL 已保存，监控引擎将使用新SQL'); document.getElementById('db-modal-overlay').style.display = 'none'; }
+      else { toastError(d.error || '保存失败'); }
+    } catch(e) { toastError('保存失败: ' + e.message); }
+  }
+  async function monSqlReset() {
+    var key = document.getElementById('mon-sql-key').value;
+    if (!confirm('确定恢复为默认 SQL？')) return;
+    try {
+      var r = await fetch('/api/monitor/sql-templates', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({key: key, reset: true})
+      });
+      var d = await r.json();
+      if (d.ok) {
+        toastMsg('已恢复默认 SQL');
+        // 更新文本框
+        var tpl = window._monSqlTemplates && window._monSqlTemplates[key];
+        if (tpl) { document.getElementById('mon-sql-text').value = tpl.default_sql || ''; tpl.current_sql = tpl.default_sql; tpl.is_overridden = false; }
+      }
+      else { toastError(d.error || '恢复失败'); }
+    } catch(e) { toastError('恢复失败: ' + e.message); }
   }
 
   async function setMonitorInterval() {
@@ -18164,15 +18266,15 @@ function mkdirRemote() {
         body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">暂无数据</div>';
         return;
       }
-      let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>`;
-      columns.forEach(c => tableHtml += `<th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--border);">${dbTranslateField(c)}</th>`);
+      let tableHtml = `<table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:auto;"><thead><tr>`;
+      columns.forEach(c => tableHtml += `<th style="text-align:left;padding:6px 6px;border-bottom:2px solid var(--border);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${dbTranslateField(c)}">${dbTranslateField(c)}</th>`);
       tableHtml += '</tr></thead><tbody>';
       rows.forEach(row => {
         tableHtml += '<tr>';
         columns.forEach(c => {
           const val = row[c] !== undefined ? row[c] : '-';
           // 颜色标识逻辑（复用 hmMiniTable 的规则）
-          var tdStyle = 'padding:5px 8px;border-bottom:1px solid var(--border);';
+          var tdStyle = 'padding:4px 6px;border-bottom:1px solid var(--border);font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
           var key = c.toLowerCase();
           var vstr = String(val).toLowerCase();
           if (key === 'status' || key === 'state' || key === 'account_status' || key === 'database_status') {

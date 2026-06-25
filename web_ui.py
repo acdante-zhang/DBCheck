@@ -3437,6 +3437,10 @@ def api_monitor_slow_queries():
     try:
         from monitor_engine import get_monitor_engine
         engine = get_monitor_engine()
+        # 自动启动（如果尚未启动）
+        if not engine.is_running:
+            engine.start()
+            engine.trigger_collect()
         data = engine.get_slow_queries()
         # RBAC 资产过滤
         allowed_ids = _get_rbac_allowed_asset_ids()
@@ -3477,6 +3481,10 @@ def api_monitor_connections():
     try:
         from monitor_engine import get_monitor_engine
         engine = get_monitor_engine()
+        # 自动启动（如果尚未启动）
+        if not engine.is_running:
+            engine.start()
+            engine.trigger_collect()
         data = engine.get_connections()
         # RBAC 资产过滤
         allowed_ids = _get_rbac_allowed_asset_ids()
@@ -3616,6 +3624,81 @@ def api_monitor_config():
         return jsonify({'ok': True, 'status': engine.get_status()})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
+
+
+# ── 监控 SQL 自定义覆盖（admin 可修改）──
+_MONITOR_SQL_OVERRIDES_PATH = os.path.join(os.path.dirname(__file__), 'pro_data', 'monitor_sql_overrides.json')
+
+
+def _load_monitor_sql_overrides():
+    """加载自定义 SQL 覆盖"""
+    try:
+        if os.path.exists(_MONITOR_SQL_OVERRIDES_PATH):
+            with open(_MONITOR_SQL_OVERRIDES_PATH, 'r', encoding='utf-8') as f:
+                return _json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def _save_monitor_sql_overrides(overrides):
+    """保存自定义 SQL 覆盖"""
+    os.makedirs(os.path.dirname(_MONITOR_SQL_OVERRIDES_PATH), exist_ok=True)
+    with open(_MONITOR_SQL_OVERRIDES_PATH, 'w', encoding='utf-8') as f:
+        _json.dump(overrides, f, ensure_ascii=False, indent=2)
+
+
+@app.route('/api/monitor/sql-templates', methods=['GET'])
+def api_monitor_sql_templates():
+    """获取所有监控 SQL 模板（admin 可查看/编辑）"""
+    if session.get('role') != 'admin':
+        return jsonify({'ok': False, 'error': '仅管理员可访问'}), 403
+    overrides = _load_monitor_sql_overrides()
+    # 构建模板列表
+    templates = {}
+    for category, mapping in [('slow_query', mq.SLOW_QUERY_TEMPLATES),
+                               ('connection', mq.CONNECTION_TEMPLATES),
+                               ('max_conn_query', mq.MAX_CONN_QUERY_SQL)]:
+        for db_type, sql in mapping.items():
+            key = f"{category}/{db_type}"
+            templates[key] = {
+                'category': category,
+                'db_type': db_type,
+                'default_sql': sql,
+                'current_sql': overrides.get(key, sql),
+                'is_overridden': key in overrides,
+            }
+    return jsonify({'ok': True, 'templates': templates, 'defaults': {
+        'slow_query': dict(mq.SLOW_QUERY_TEMPLATES),
+        'connection': dict(mq.CONNECTION_TEMPLATES),
+        'max_conn_query': dict(mq.MAX_CONN_QUERY_SQL),
+    }})
+
+
+@app.route('/api/monitor/sql-templates', methods=['POST'])
+def api_monitor_save_sql_template():
+    """保存自定义 SQL 模板（admin）"""
+    if session.get('role') != 'admin':
+        return jsonify({'ok': False, 'error': '仅管理员可访问'}), 403
+    body = request.get_json() or {}
+    key = body.get('key', '').strip()
+    sql = body.get('sql', '').strip()
+    reset = body.get('reset', False)
+    if not key:
+        return jsonify({'ok': False, 'error': '缺少 key'}), 400
+    overrides = _load_monitor_sql_overrides()
+    if reset:
+        overrides.pop(key, None)
+    else:
+        if not sql:
+            return jsonify({'ok': False, 'error': 'SQL 不能为空'}), 400
+        overrides[key] = sql
+    _save_monitor_sql_overrides(overrides)
+    # 让监控引擎重新加载
+    from monitor_engine import get_monitor_engine
+    engine = get_monitor_engine()
+    engine.reload_sql_overrides()
+    return jsonify({'ok': True, 'msg': '保存成功'})
 
 # ═══════════════════════════════════════════════════════════
 #  健康监控 API（数据库健康状态监控页面）
@@ -4625,12 +4708,17 @@ def api_dashboard_share_data(token):
                 return jsonify({'ok': False, 'error': f'IP {client_ip} 不在白名单内'}), 403
 
         cards = _json.loads(row['cards_json'])
-        # 复用 dashboard data 逻辑
         from pro.instance_manager import get_instance_manager
+        from health_monitor_queries import DB_HEALTH_SQL_MAP, CARD_DISPLAY_CONFIG
+        from health_monitor_engine import get_health_monitor_engine
         im = get_instance_manager()
+        engine = get_health_monitor_engine()
         result_cards = []
         for card in cards:
-            card_result = {'id': card.get('id', ''), 'title': card.get('title', '')}
+            card_id = card.get('id', '')
+            card_type = card.get('type', 'metric')
+            card_title = card.get('title', '')
+            card_result = {'id': card_id, 'title': card_title, 'type': card_type}
             try:
                 ds_id = card.get('datasource_id', '')
                 inst = im.get_instance_decrypted(str(ds_id))
@@ -4638,33 +4726,44 @@ def api_dashboard_share_data(token):
                     card_result['error'] = '数据源不存在'
                     result_cards.append(card_result)
                     continue
-                db_type = inst.get('db_type', '').lower().replace('oracle_full', 'oracle')
-                card_type = card.get('type', '')
+                db_type = inst.get('db_type', '').lower().replace('oracle_full', 'oracle').replace('oracle_rac', 'oracle')
                 monitor_item = card.get('monitor_item', '')
                 custom_sql = card.get('custom_sql', '')
 
                 if card_type == 'custom_sql' and custom_sql:
-                    sql = custom_sql
+                    result = engine.execute_custom_sql(str(ds_id), custom_sql)
+                    if result.get('ok'):
+                        card_result['columns'] = result.get('columns', [])
+                        card_result['data'] = result.get('rows', [])
+                    else:
+                        card_result['error'] = result.get('error', '查询失败')
                 elif monitor_item:
-                    from health_monitor_queries import DB_HEALTH_SQL_MAP
                     sql_map = DB_HEALTH_SQL_MAP.get(db_type, {})
                     sql = sql_map.get(monitor_item, '')
                     if not sql:
                         card_result['error'] = f'不支持: {monitor_item}'
                         result_cards.append(card_result)
                         continue
+                    result = engine.execute_custom_sql(str(ds_id), sql)
+                    if result.get('ok'):
+                        rows = result.get('rows', [])
+                        cols = result.get('columns', [])
+                        card_result['columns'] = cols
+                        # metric 卡片特殊处理
+                        if card_type == 'metric' and rows and len(rows) == 1:
+                            first_row = rows[0]
+                            if cols:
+                                card_result['metric_val'] = first_row.get(cols[0], '-')
+                                card_result['metric_label'] = cols[0]
+                            else:
+                                keys = list(first_row.keys())
+                                card_result['metric_val'] = first_row.get(keys[0], '-') if keys else '-'
+                                card_result['metric_label'] = keys[0] if keys else ''
+                        card_result['data'] = rows[:100]
+                    else:
+                        card_result['error'] = result.get('error', '查询失败')
                 else:
                     card_result['error'] = '无SQL'
-                    result_cards.append(card_result)
-                    continue
-
-                # 执行查询
-                from monitor_engine import MonitorEngine
-                me = MonitorEngine()
-                rows = me._connect_and_query(str(ds_id), sql)
-                # 转换为中文键
-                from health_monitor_queries import CARD_DISPLAY_CONFIG
-                card_result['data'] = rows[:100]
             except Exception as e:
                 card_result['error'] = str(e)
             result_cards.append(card_result)
@@ -4698,37 +4797,55 @@ def dashboard_share_page(token):
 
         cards_json = row['cards_json'] if 'cards_json' in row.keys() else '[]'
         config_name = row['name']
-        share_html = """<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>__TITLE__ - 只读看板</title>
+        share_html = r"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>__TITLE__ - 只读看板</title>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { background:#0d1117; color:#e6edf3; font-family:sans-serif; padding:20px; }
-.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-.header h1 { font-size:18px; }
-.badge { background:#1a7f37; color:#fff; padding:2px 10px; border-radius:12px; font-size:12px; }
-.ctrl { display:flex; gap:8px; align-items:center; font-size:13px; }
-.ctrl select, .ctrl button { padding:4px 10px; border-radius:6px; border:1px solid #30363d; background:#161b22; color:#e6edf3; }
-.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:14px; }
-.card { background:#161b22; border:1px solid #30363d; border-radius:10px; overflow:hidden; }
-.card-title { padding:10px 14px; background:#1c2330; font-weight:600; font-size:13px; border-bottom:1px solid #30363d; }
-.card-body { padding:12px 14px; min-height:80px; max-height:400px; overflow-y:auto; }
-table { width:100%; border-collapse:collapse; font-size:12px; }
-th,td { padding:6px 8px; border-bottom:1px solid #21262d; text-align:left; }
-th { color:#8b949e; font-weight:500; }
-.stat { display:flex; justify-content:space-between; padding:4px 0; }
-.stat b { color:#f0f6fc; }
-.loading { text-align:center; color:#8b949e; padding:20px; }
-.updated { font-size:11px; color:#8b949e; }
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2330;--border:#30363d;--text:#e6edf3;--text-muted:#8b949e;--green:#3fb950;--red:#f85149;--yellow:#d2991d;--accent:#58a6ff}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.header h1{font-size:18px;white-space:nowrap}
+.badge{background:#1a7f37;color:#fff;padding:2px 10px;border-radius:12px;font-size:12px;white-space:nowrap}
+.ctrl{display:flex;gap:8px;align-items:center;font-size:13px;flex-wrap:wrap}
+.ctrl select,.ctrl button{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
+.ctrl button:hover{background:#21262d}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:box-shadow 0.2s}
+.card:hover{box-shadow:0 2px 12px rgba(0,0,0,0.3)}
+.card-title{padding:10px 14px;background:var(--surface2);font-weight:600;font-size:13px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.card-title .card-icon{font-size:16px}
+.card-title .card-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-body{padding:12px 14px;min-height:80px;max-height:400px;overflow-y:auto}
+.card-body table{width:100%;border-collapse:collapse;font-size:12px}
+.card-body th,.card-body td{padding:6px 8px;border-bottom:1px solid #21262d;text-align:left}
+.card-body th{color:var(--text-muted);font-weight:500;white-space:nowrap}
+.card-body td{max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}
+.stat span{color:var(--text-muted)}
+.stat b{color:var(--text)}
+.metric-val{text-align:center;padding:20px}
+.metric-val .big-num{font-size:36px;font-weight:700;color:var(--accent)}
+.metric-val .big-label{font-size:12px;color:var(--text-muted);margin-top:4px}
+.loading{text-align:center;color:var(--text-muted);padding:20px}
+.updated{font-size:11px;color:var(--text-muted)}
+.good{color:var(--green);font-weight:bold}
+.bad{color:var(--red);font-weight:bold}
+.warn{color:var(--yellow);font-weight:bold}
+.usage-high{color:var(--red);font-weight:bold}
+.usage-mid{color:var(--yellow);font-weight:bold}
+.usage-ok{color:var(--green)}
+.usage-bar{height:6px;border-radius:3px;background:#21262d;margin:4px 0;overflow:hidden}
+.usage-bar-fill{height:100%;border-radius:3px;transition:width 0.3s}
+.usage-bar-fill.critical{background:var(--red)}
+.usage-bar-fill.warning{background:var(--yellow)}
+.usage-bar-fill.ok{background:var(--green)}
 </style></head><body>
 <div class="header">
   <h1>📊 __TITLE__</h1>
   <div class="ctrl">
     <span class="badge">只读分享</span>
     <select id="refresh-interval" onchange="changeInterval()">
-      <option value="0">不自动刷新</option>
-      <option value="10">10秒</option>
-      <option value="30" selected>30秒</option>
-      <option value="60">60秒</option>
+      <option value="0">不自动刷新</option><option value="10">10秒</option><option value="30" selected>30秒</option><option value="60">60秒</option>
     </select>
     <button onclick="loadData()">🔄 刷新</button>
     <span class="updated" id="updated-time"></span>
@@ -4736,45 +4853,56 @@ th { color:#8b949e; font-weight:500; }
 </div>
 <div class="grid" id="cards-grid"><div class="loading">加载中...</div></div>
 <script>
-var TOKEN = '__TOKEN__';
-var _timer = null;
-function changeInterval() {
-  if (_timer) { clearInterval(_timer); _timer = null; }
-  var v = parseInt(document.getElementById('refresh-interval').value);
-  if (v > 0) _timer = setInterval(loadData, v * 1000);
-}
-async function loadData() {
-  try {
-    var r = await fetch('/api/dashboard/share/' + TOKEN + '/data');
-    var d = await r.json();
-    if (!d.ok) { document.getElementById('cards-grid').innerHTML = '<div class="loading">' + (d.error||'加载失败') + '</div>'; return; }
-    var cards = d.cards || [];
-    if (!cards.length) { document.getElementById('cards-grid').innerHTML = '<div class="loading">暂无卡片</div>'; return; }
-    var html = '';
-    cards.forEach(function(c) {
-      var body = '<div class="loading">无数据</div>';
-      if (c.error) body = '<div style="color:#f85149;padding:10px;">⚠️ ' + c.error + '</div>';
-      else if (c.data && Array.isArray(c.data) && c.data.length) {
-        var cols = Object.keys(c.data[0]);
-        body = '<table><tr>' + cols.map(function(k){return '<th>'+k+'</th>';}).join('') + '</tr>';
-        c.data.slice(0,30).forEach(function(row) {
-          body += '<tr>' + cols.map(function(k){return '<td>'+row[k]+'</td>';}).join('') + '</tr>';
+var TOKEN='__TOKEN__',_timer=null;
+var FIELD_CN={tablespace_name:'表空间名',total_gb:'总量(GB)',used_gb:'已用(GB)',usage_pct:'使用率(%)',datafile_count:'数据文件数',status:'状态',datafile_gb:'数据文件(GB)',segment_gb:'段大小(GB)',instance_name:'实例名',host_name:'主机名',version:'版本',startup_time:'启动时间',database_role:'数据库角色',protection_mode:'保护模式',open_mode:'打开模式',standby_count:'备库数',max_apply_lag_min:'最大延迟(分钟)',dest_details:'归档目的地',inst_id:'实例ID',instance_role:'实例角色',uptime_hours:'运行(小时)',total_sessions:'总会话',session_limit:'会话上限',active_sessions:'活动会话',inactive_sessions:'非活动会话',background_sessions:'后台会话',username:'用户名',account_status:'账户状态',created_date:'创建日期',default_tablespace:'默认表空间',temporary_tablespace:'临时表空间',backup_time:'备份时间',input_type:'类型',size_gb:'大小(GB)',duration_min:'耗时(分)',name:'名称',type:'类型',state:'状态',free_gb:'空闲(GB)',database_status:'数据库状态'};
+function t(k){return FIELD_CN[k]||k}
+function colorStatus(v){var s=String(v||'').toLowerCase(),g=['open','active','valid','ok','normal','read write','running'],b=['critical','error','failed','locked','expired','invalid','shutdown','blocked'],w=['warning','restricted','inactive','read only','suspended','recovering'];if(g.some(function(x){return s===x}))return'good';if(b.some(function(x){return s.indexOf(x)>-1}))return'bad';if(w.some(function(x){return s.indexOf(x)>-1}))return'warn';return''}
+function colorPct(v){var p=parseFloat(v)||0;return p>90?'usage-high':p>80?'usage-mid':'usage-ok'}
+function usageBar(pct){pct=parseFloat(pct)||0;var c=pct>90?'critical':pct>80?'warning':'ok';return'<div class="usage-bar"><div class="usage-bar-fill '+c+'" style="width:'+Math.min(pct,100)+'%"></div></div><span style="font-size:11px;margin-left:4px;" class="'+colorPct(pct)+'">'+pct+'%</span>'}
+function isPctCol(k){return k==='usage_pct'||k==='pct_used'||k.indexOf('usage')>-1||k.indexOf('pct')>-1}
+function isStatusCol(k){return k==='status'||k==='state'||k==='account_status'||k==='database_status'}
+function changeInterval(){if(_timer){clearInterval(_timer);_timer=null}var v=parseInt(document.getElementById('refresh-interval').value);if(v>0)_timer=setInterval(loadData,v*1000)}
+async function loadData(){
+  try{
+    var r=await fetch('/api/dashboard/share/'+TOKEN+'/data'),d=await r.json();
+    if(!d.ok){document.getElementById('cards-grid').innerHTML='<div class="loading" style="color:var(--red)">'+(d.error||'加载失败')+'</div>';return}
+    var cards=d.cards||[];
+    if(!cards.length){document.getElementById('cards-grid').innerHTML='<div class="loading">暂无卡片</div>';return}
+    var html='';
+    cards.forEach(function(c){
+      var body='<div class="loading">无数据</div>';
+      if(c.error){body='<div style="color:var(--red);padding:10px;">⚠️ '+c.error+'</div>'}
+      else if(c.data&&Array.isArray(c.data)&&c.data.length){
+        var cols=(c.columns&&c.columns.length)?c.columns:Object.keys(c.data[0]);
+        body='<table><thead><tr>'+cols.map(function(k){return'<th>'+t(k)+'</th>'}).join('')+'</tr></thead><tbody>';
+        c.data.slice(0,30).forEach(function(row){
+          body+='<tr>'+cols.map(function(k){
+            var val=row[k]!==undefined?row[k]:'-',vstr=String(val).toLowerCase(),key=k.toLowerCase(),cls='';
+            if(isStatusCol(key))cls=colorStatus(val);
+            else if(isPctCol(key))cls=colorPct(val);
+            return '<td class="'+cls+'">'+val+'</td>';
+          }).join('')+'</tr>';
         });
-        body += '</table>';
-      } else if (c.data && typeof c.data === 'object') {
-        body = '<div>';
-        for (var k in c.data) { body += '<div class="stat"><span>'+k+'</span><b>'+c.data[k]+'</b></div>'; }
-        body += '</div>';
+        body+='</tbody></table>';
+      }else if(c.data&&typeof c.data==='object'&&!Array.isArray(c.data)){
+        body='<div>';
+        for(var k in c.data){
+          var v=c.data[k],key=k.toLowerCase(),cls='';
+          if(isStatusCol(key))cls=colorStatus(v);
+          else if(isPctCol(key)){cls=colorPct(v);body+='<div class="stat"><span>'+t(k)+'</span><b class="'+cls+'">'+v+'</b></div>'+usageBar(v);continue}
+          body+='<div class="stat"><span>'+t(k)+'</span><b class="'+cls+'">'+v+'</b></div>';
+        }
+        body+='</div>';
+      }else if(c.metric_val!==undefined){
+        body='<div class="metric-val"><div class="big-num">'+c.metric_val+'</div><div class="big-label">'+t(c.metric_label||'')+'</div></div>';
       }
-      html += '<div class="card"><div class="card-title">'+c.title+'</div><div class="card-body">'+body+'</div></div>';
+      html+='<div class="card"><div class="card-title"><span class="card-label">'+c.title+'</span></div><div class="card-body">'+body+'</div></div>';
     });
-    document.getElementById('cards-grid').innerHTML = html;
-    document.getElementById('updated-time').textContent = '更新: ' + new Date().toLocaleTimeString();
-  } catch(e) {
-    document.getElementById('cards-grid').innerHTML = '<div class="loading">加载失败: '+e.message+'</div>';
-  }
+    document.getElementById('cards-grid').innerHTML=html;
+    document.getElementById('updated-time').textContent='更新: '+new Date().toLocaleTimeString()
+  }catch(e){document.getElementById('cards-grid').innerHTML='<div class="loading" style="color:var(--red)">加载失败: '+e.message+'</div>'}
 }
-loadData(); changeInterval();
+loadData();changeInterval();
 </script></body></html>"""
         share_html = share_html.replace('__TITLE__', config_name).replace('__TOKEN__', token)
         return share_html
@@ -8513,6 +8641,15 @@ if __name__ == '__main__':
             print(f"[插件] 已加载 {n} 个插件")
     except Exception as e:
         print(f"[插件] 初始化跳过: {e}")
+    # ── 自动启动实时监控引擎 ──
+    try:
+        from monitor_engine import get_monitor_engine
+        me = get_monitor_engine()
+        if not me.is_running:
+            me.start()
+            print("[Monitor] 实时监控引擎已自动启动")
+    except Exception as e:
+        print(f"[Monitor] 启动失败: {e}")
     port = 5003
     print(_t('webui.startup_msg').format(port=port))
     socketio.run(app, host='0.0.0.0', port=port, debug=False)

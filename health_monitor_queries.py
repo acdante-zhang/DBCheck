@@ -48,7 +48,7 @@ ORACLE_HEALTH_SQL = {
         SELECT * FROM (
             SELECT TO_CHAR(START_TIME,'YYYY-MM-DD HH24:MI') AS backup_time,
                    STATUS, INPUT_TYPE,
-                   NULL AS size_gb,
+                   ROUND(NVL(OUTPUT_BYTES,0)/1073741824,2) AS size_gb,
                    ROUND(ELAPSED_SECONDS/60,1) AS duration_min,
                    OUTPUT_DEVICE_TYPE
             FROM v$rman_backup_job_details

@@ -47,6 +47,9 @@ class MonitorEngine:
         self._conn_history = deque(maxlen=self.MAX_HISTORY)
         # 最后一次采集时间
         self._last_collect_ts = 0
+        # SQL 覆盖
+        self._sql_overrides = {}
+        self._load_sql_overrides()
 
     # ═══════════════════════════════════════════════════════════
     #  启停控制
@@ -80,6 +83,31 @@ class MonitorEngine:
     @property
     def interval(self):
         return self._interval
+
+    # ── SQL 覆盖 ──
+    def _load_sql_overrides(self):
+        """从 pro_data/monitor_sql_overrides.json 加载自定义 SQL"""
+        import os, json
+        path = os.path.join(os.path.dirname(__file__), 'pro_data', 'monitor_sql_overrides.json')
+        try:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    self._sql_overrides = json.load(f)
+        except Exception:
+            self._sql_overrides = {}
+
+    def reload_sql_overrides(self):
+        """重新加载 SQL 覆盖（API 调用后刷新）"""
+        self._load_sql_overrides()
+
+    def _get_sql(self, category, norm_type, fallback=None):
+        """获取 SQL（优先使用覆盖，其次使用内置模板）"""
+        key = f"{category}/{norm_type}"
+        if key in self._sql_overrides:
+            return self._sql_overrides[key]
+        if fallback is not None:
+            return fallback.get(norm_type)
+        return None
 
     # ═══════════════════════════════════════════════════════════
     #  数据读取（线程安全）
@@ -206,7 +234,7 @@ class MonitorEngine:
     def _collect_slow(self, instance_id, db_type, label):
         # 归一化 db_type：oracle_full/oracle_rac → oracle
         norm_type = db_type.replace('_full', '').replace('_rac', '') if db_type else ''
-        sql = mq.SLOW_QUERY_TEMPLATES.get(norm_type)
+        sql = self._get_sql('slow_query', norm_type, mq.SLOW_QUERY_TEMPLATES)
         if not sql:
             return {'data': [], 'error': f'不支持的类型: {db_type}',
                     'ts': time.time(), 'db_type': db_type, 'label': label}
@@ -239,7 +267,7 @@ class MonitorEngine:
     def _collect_conn(self, instance_id, db_type, label):
         # 归一化 db_type
         norm_type = db_type.replace('_full', '').replace('_rac', '') if db_type else ''
-        conn_sql = mq.CONNECTION_TEMPLATES.get(norm_type)
+        conn_sql = self._get_sql('connection', norm_type, mq.CONNECTION_TEMPLATES)
         if not conn_sql:
             return {'data': [], 'error': f'不支持的类型: {db_type}',
                     'ts': time.time(), 'total': 0, 'max_conn': 0,
@@ -267,7 +295,7 @@ class MonitorEngine:
                         'db_type': db_type, 'label': label}
 
         # 获取最大连接数
-        max_sql = mq.MAX_CONN_QUERY_SQL.get(norm_type)
+        max_sql = self._get_sql('max_conn_query', norm_type, mq.MAX_CONN_QUERY_SQL)
         max_conn = mq.MAX_CONNECTION_DEFAULTS.get(norm_type, 100)
         if max_sql:
             try:
